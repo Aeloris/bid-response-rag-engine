@@ -67,3 +67,14 @@ qa:
   judge_all: false               # false=只送"有引用且未被代码 BLOCK"的点给 Judge，省 token 且稳
   max_attempts: 1                # 改写闭环限次（含首轮；1 = 有可修 issue 就改写一轮）
   min_citations_for_judge: 1     # 无引用的点不进 Judge（宁缺毋滥，直接标需人工）
+
+# ============ 评测（Phase 8 用）============
+eval:
+  output_dir: ./data/eval        # eval_report.json/.md 输出（data/ 已被 .gitignore 覆盖）
+  top_k: 5                       # 检索指标口径 Recall@k / MRR@k
+  thresholds:
+    parse_point_f1: 0.9          # 解析评分点 F1 下限（mock 实测 1.0）
+    retrieval_hybrid_recall_at_k: 0.6    # 混合检索 Recall@5 下限（mock 实测 0.733）
+    retrieval_hybrid_mrr_at_k: 0.6       # 混合检索 MRR@5 下限（mock 实测 0.700）
+    qa_bad_detection_rate: 1.0   # 坏例检出率下限（3/3，代码判确定性）
+    qa_good_fp_rate_max: 0.0     # 好例误报率上限（合规草稿不得误拦）

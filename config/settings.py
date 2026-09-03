@@ -137,6 +137,27 @@ class QAConfig(BaseModel):
     min_citations_for_judge: int = 1  # 无引用的点不进 Judge（宁缺毋滥，直接需人工）
 
 
+class EvalThresholds(BaseModel):
+    """评测门禁（CI 基线，基于 mock 确定性实测回填；低于则 run.py exit 1）。
+
+    诚实约定：这些阈值是「离线 mock 基线」的门禁，不是"我多好"的宣称——
+    防止改引擎后偷偷回退。跑真实模型版（provider=dashscope 且 LLM/Embedding 已接入）
+    时门禁关闭（只提示），因为真模型版基线需另标。
+    """
+
+    parse_point_f1: float = 0.9          # 解析评分点 F1 下限（实测 1.0）
+    retrieval_hybrid_recall_at_k: float = 0.6   # 混合检索 Recall@5 下限（实测 0.733）
+    retrieval_hybrid_mrr_at_k: float = 0.6      # 混合检索 MRR@5 下限（实测 0.700）
+    qa_bad_detection_rate: float = 1.0   # 坏例检出率下限（3/3 代码判确定性）
+    qa_good_fp_rate_max: float = 0.0     # 好例误报率上限（合规草稿不得误拦）
+
+
+class EvalConfig(BaseModel):
+    output_dir: str = "./data/eval"  # eval_report.json/.md 输出目录（gitignore 覆盖）
+    top_k: int = 5
+    thresholds: EvalThresholds = Field(default_factory=EvalThresholds)
+
+
 class Settings(BaseModel):
     app: AppConfig = Field(default_factory=AppConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
@@ -148,6 +169,7 @@ class Settings(BaseModel):
     generator: GeneratorConfig = Field(default_factory=GeneratorConfig)
     parser: ParserConfig = Field(default_factory=ParserConfig)
     qa: QAConfig = Field(default_factory=QAConfig)
+    eval: EvalConfig = Field(default_factory=EvalConfig)
 
     @classmethod
     def from_yaml(cls, path: str | Path | None = None) -> "Settings":

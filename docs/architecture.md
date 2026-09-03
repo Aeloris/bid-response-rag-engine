@@ -3,8 +3,14 @@
 > 本文件随代码演进持续更新（AI 编码每阶段都需保持 mermaid 与代码一致）。
 > 设计说明书（需求/痛点/面试点）见父目录 `README.md`。
 
-## Phase 7（当前）：报告器与导出就绪
+## Phase 8（当前）：评测与验收（eval-harness）
 
+- 评测层：`evals/`（dataset/adversarial/metrics/harness/run）——带 gold 的评测集回放 + 确定性指标 +
+  阈值门禁。gold 人工策展带版本身份（AnnotationMeta），坏例 gold=注入语义、张冠李戴诚实门控待真模型；
+  指标纯函数与引擎无关可回归；CLI `uv run python -m evals.run` 落 `data/eval/eval_report.{json,md}` 并做
+  五道门禁。详见 [`docs/eval.md`](eval.md)。**实测摘要（mock 确定性基线）**：解析 F1 1.0、混合检索
+  R@5 0.7333/MRR 0.7000（纯向量基线 0.7833/0.8000，delta 为负故不宣称混合更优）、坏例检出 3/3=1.0、
+  好例误报 0、端到端 0.155s / 21 LLM calls。
 - 服务层：FastAPI（`app/main.py`）把 P1–P5 收成接口 —— `/health`、`/` 根路由，
   `POST /tenders/parse`（评分点速览）、`POST /tasks` + `GET /tasks/{id}` +
   `GET /tasks/{id}/result`（一条标 = 一个 job，五步流水线产物逐段落盘）。详见 [`docs/api.md`](api.md)。
@@ -50,6 +56,7 @@ flowchart TB
     CL["core/calculator 数值核对（Phase4）"]
     QA["core/qa 自检质检（Phase5）"]
     RP["core/reporter 报告装配 + md/html/xlsx 渲染（Phase7，纯派生不重跑）"]
+    EV["evals/ 评测 harness（Phase8）<br/>gold 回放 + 确定性指标 + 阈值门禁"]
   end
   subgraph LLM["模型层 llm/"]
     LP["LLMProvider 抽象"]
@@ -59,12 +66,15 @@ flowchart TB
   subgraph INFRA["基础设施"]
     QD[(Qdrant 本地模式 Phase2)]
     JD[("data/jobs/{id}/<br/>result.json + steps/ 每步产物")]
+    ER[("data/eval/<br/>eval_report.json/.md")]
     CF["config/config.yaml"]
   end
   S --> API --> CORE
   CORE --> RP
   RP -.读落盘产物纯派生.-> JD
   E6 -.读落盘产物.-> JD
+  EV -.回放真引擎逐 case 计数.-> P & IG & GN & CL & QA
+  EV -.写报告.-> ER
   P --> IG --> QD
   RT --> QD
   CORE --> LP
@@ -95,10 +105,16 @@ flowchart LR
   M --> N
 ```
 
-## 运行方式（Phase 7）
+## 运行方式（Phase 8）
 
 ```bash
-uv run pytest                # 全部测试（离线，不联网，81 passed）
+uv run pytest                # 全部测试（离线，不联网，99 passed）
+uv run pytest tests/test_eval.py   # Phase 8 eval 专项（18 项）
+
+# ---- 评测（Phase 8）----
+uv run python -m evals.run         # 跑 mock 确定性基线 → data/eval/eval_report.{json,md} + 五道门禁
+uv run python -m evals.run --no-gate   # 只报告不做门禁退出
+#   provider=dashscope 时会被明确拒绝（DashScope LLM Provider 尚为骨架），见 docs/eval.md §8
 
 # ---- 服务层（Phase 6/7）----
 uv run uvicorn app.main:app --reload          # 起服务；浏览器 http://127.0.0.1:8000/docs
