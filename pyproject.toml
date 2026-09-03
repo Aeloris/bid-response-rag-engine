@@ -1,6 +1,8 @@
 [project]
 name = "bid-response-agent"
-version = "0.1.0"
+version = "0.8.0"
+description = "应标 Agent：招标书解析 → 逐评分点检索应答 → 数值核对 → 漏项/风险自检 → 报告导出（含 eval-harness 评测）"
+readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "fastapi>=0.141.1",
@@ -13,6 +15,11 @@ dependencies = [
     "qdrant-client>=1.19.0",
     "uvicorn[standard]>=0.52.4",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Aeloris/bid-response-rag-engine"
+Repository = "https://github.com/Aeloris/bid-response-rag-engine"
+Issues = "https://github.com/Aeloris/bid-response-rag-engine/issues"
 
 [dependency-groups]
 dev = [

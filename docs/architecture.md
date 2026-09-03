@@ -1,7 +1,8 @@
 # 应标 Agent — 架构文档
 
 > 本文件随代码演进持续更新（AI 编码每阶段都需保持 mermaid 与代码一致）。
-> 设计说明书（需求/痛点/面试点）见父目录 `README.md`。
+> 仓库总览 / 快速开始 / 实测见根目录 [`README.md`](../README.md)；内部设计说明书（需求/痛点/面试要点）见
+> `D:\develop\MyProject\README.md`（不随本仓库分发）。
 
 ## Phase 8（当前）：评测与验收（eval-harness）
 

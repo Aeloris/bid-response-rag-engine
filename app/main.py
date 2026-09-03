@@ -19,7 +19,7 @@ settings = get_settings()  # 启动即校验配置
 
 app = FastAPI(
     title=settings.app.name,
-    version="0.7.0",
+    version="0.8.0",
     description="投标应答 Agent：上传招标书 PDF → 逐评分点检索取证→生成应答→数值核对→自检质检 → "
                 "应答包 + 待补材料 + 风险清单（BLOCK 即拦截）+ 报告页/导出。默认 mock 离线可跑。",
 )

@@ -12,3 +12,8 @@ __pycache__/
 
 # 运行时产物（上传文件/向量库/导出件）
 data/
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+*.log
