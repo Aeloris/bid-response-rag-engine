@@ -3,9 +3,14 @@
 > 本文件随代码演进持续更新（AI 编码每阶段都需保持 mermaid 与代码一致）。
 > 设计说明书（需求/痛点/面试点）见父目录 `README.md`。
 
-## Phase 5（当前）：自检质检就绪
+## Phase 6（当前）：API 服务层就绪
 
-- 服务层：FastAPI（`app/main.py`）`/health`、`/`，配置启动即校验。
+- 服务层：FastAPI（`app/main.py`）把 P1–P5 收成接口 —— `/health`、`/` 根路由，
+  `POST /tenders/parse`（评分点速览）、`POST /tasks` + `GET /tasks/{id}` +
+  `GET /tasks/{id}/result`（一条标 = 一个 job，五步流水线产物逐段落盘）。详见 [`docs/api.md`](api.md)。
+- 任务编排：`app/jobs.py` `run_pipeline` 按 parse→ingest→generate→calc→qa 跑，
+  `JobStore` 文件即状态（data/jobs/{id}/：input.pdf + state.json + result.json + steps/），
+  错误分段：输入错→4xx，引擎真异常→failed 并注明步骤，不吞诚实信号。
 - 模型层：`llm/` 抽象 + Mock（默认离线可跑）+ DashScope 骨架。
 - 配置层：`config/config.yaml` 已预留全量参数 + `config/settings.py` 强类型加载（embedding/rerank/generator 默认 mock）。
 - 解析层：`core/parser/` 双通道（规则锚点 + LLM 抽取）已实现，PDF→`TenderDoc`+`ParseReport`。详见 [`docs/parser.md`](parser.md)。
@@ -27,12 +32,12 @@ flowchart TB
   subgraph UI["交互层(Phase7)"]
     S["Streamlit 面板"]
   end
-  subgraph API["服务层 FastAPI"]
-    E1["/health（Phase0 已通）"]
-    E2["POST /tenders/parse（Phase6）"]
-    E3["POST /pipeline（Phase6）"]
-    E4["GET /reports（Phase6/7）"]
-    E5["知识库 CRUD（Phase2/6）"]
+  subgraph API["服务层 FastAPI（Phase6）"]
+    E1["GET /health（已通）"]
+    E2["POST /tenders/parse（已通）"]
+    E3["POST /tasks 建任务跑五步流水线（已通）"]
+    E4["GET /tasks/{id} 轮询状态（已通）"]
+    E5["GET /tasks/{id}/result 拉产物（已通）"]
   end
   subgraph CORE["核心业务层"]
     P["core/parser 解析引擎（Phase1）"]
@@ -83,10 +88,22 @@ flowchart LR
   M --> N
 ```
 
-## 运行方式（Phase 5）
+## 运行方式（Phase 6）
 
 ```bash
-uv run pytest                # 全部测试（离线，不联网，71 passed）
+uv run pytest                # 全部测试（离线，不联网，75 passed）
+
+# ---- 服务层（Phase 6）----
+uv run uvicorn app.main:app --reload          # 起服务；浏览器 http://127.0.0.1:8000/docs
+#   ① 只看评分点速览
+curl -s -F "file=@fixtures/tender_sample.pdf" http://127.0.0.1:8000/tenders/parse
+#   ② 跑完整条标（一条标=一个 job，v1 同步返回终态）
+curl -s -F "file=@fixtures/tender_sample.pdf" http://127.0.0.1:8000/tasks
+#   ③ 拉产物：gen/calc/qa + needs_material + escalation_required
+curl -s http://127.0.0.1:8000/tasks/{JOB_ID}/result
+#   更多契约/时序/状态机/错误分段见 docs/api.md
+
+# ---- 引擎直调 demo（库级，不走 HTTP）----
 uv run python scripts/make_tender_fixture.py   # 重新生成样例招标书 PDF fixture
 uv run python - <<'PY'       # 一条标：解析 → 入库 → 逐点应答 → 数值核对 → 自检质检（demo）
 import asyncio
@@ -121,8 +138,6 @@ async def main():
         print("  -", i.severity.value.upper(), i.kind.value, i.point_id, "|", i.reason[:70])
 asyncio.run(main())
 PY
-uv run uvicorn app.main:app --reload   # 起服务
-# 浏览器打开 http://127.0.0.1:8000/docs 看接口
 ```
 
 > 换真实模型：填 `.env` 的 `DASHSCOPE_API_KEY`，把 `config/config.yaml` 的 `llm.provider` 改为 `dashscope` 即可，业务代码零改动。
