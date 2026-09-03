@@ -116,4 +116,4 @@ config/    config.yaml 全量参数外置 + settings.py 强类型加载
 
 ## License
 
-暂未定（见 Issue/联系作者）。代码仅供学习与演示。
+[MIT](LICENSE)。
