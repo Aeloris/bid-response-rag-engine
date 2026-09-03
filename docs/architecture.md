@@ -3,7 +3,7 @@
 > 本文件随代码演进持续更新（AI 编码每阶段都需保持 mermaid 与代码一致）。
 > 设计说明书（需求/痛点/面试点）见父目录 `README.md`。
 
-## Phase 3（当前）：应答生成已就绪
+## Phase 4（当前）：数值核对已就绪
 
 - 服务层：FastAPI（`app/main.py`）`/health`、`/`，配置启动即校验。
 - 模型层：`llm/` 抽象 + Mock（默认离线可跑）+ DashScope 骨架。
@@ -13,7 +13,9 @@
   `core/retriever`(Dense+BM25→RRF→Rerank) 已实现。详见 [`docs/retrieval.md`](retrieval.md)。
 - 生成层：`core/generator/` 逐评分点检索→限量上下文→批量结构化应答→三层幻觉控制（prompt 约束/空上下文 gap/引用编号代码校验）已实现。
   详见 [`docs/generator.md`](generator.md)。
-- 占位待填：`core/calculator|qa|reporter`（Phase 4 起逐 Phase 填充）。
+- 数值核对层：`core/calculator/` 招标数值要求 × 我方能力 → 逐条偏离判定（纯代码计算器，能算的绝不让模型算；
+  数字陷阱防误抽 + 单位归一 + 三态一灰 + ★负偏离记账）。详见 [`docs/calculator.md`](calculator.md)。
+- 占位待填：`core/qa|reporter`（Phase 5 起逐 Phase 填充）。
 
 ### 系统分层架构
 
@@ -78,14 +80,16 @@ flowchart LR
   M --> N
 ```
 
-## 运行方式（Phase 3）
+## 运行方式（Phase 4）
 
 ```bash
-uv run pytest                # 全部测试（离线，不联网，26 passed）
+uv run pytest                # 全部测试（离线，不联网，42 passed）
 uv run python scripts/make_tender_fixture.py   # 重新生成样例招标书 PDF fixture
-uv run python - <<'PY'       # 一条标：解析评分点 → 入库语料 → 逐点检索 → 带引用应答（demo）
+uv run python - <<'PY'       # 一条标：解析评分点 → 入库语料 → 逐点检索 → 带引用应答 → 数值核对（demo）
 import asyncio
+from pathlib import Path
 from config.settings import get_settings
+from core.calculator import Calculator, extract
 from core.generator import Generator
 from core.ingest import ingest_corpus
 from core.parser.pipeline import parse_tender
@@ -95,41 +99,23 @@ from llm.mock_provider import MockProvider
 async def main():
     s = get_settings()
     llm = MockProvider(s)
-    doc, _ = await parse_tender("fixtures/tender_sample.pdf", llm)   # 评分点
+    doc, _ = await parse_tender("fixtures/tender_sample.pdf", llm)   # 解析：评分点+参数表+★
+    # ① 应答生成（Phase3）
     st = VectorStore(s.vector_db.collection, s.embedding.dimension, path=":memory:")
-    await ingest_corpus("fixtures/corpus", st, s)                    # 语料入库
-    answers, summary = await Generator(s, llm).generate(
+    await ingest_corpus("fixtures/corpus", st, s)
+    answers, gsum = await Generator(s, llm).generate(
         doc.score_points, Retriever(s, st).retrieve, doc.tender_title)
-    print(summary)
-    for a in answers:
-        print(a.point_id, "needs_human=", a.needs_human, "cites=", [c.source for c in a.citations])
-asyncio.run(main())
-PY
-uv run python - <<'PY'       # 看一次入库 + 检索（demo）
-import asyncio
-from config.settings import get_settings
-from core.ingest import ingest_corpus
-from core.retriever import Retriever
-from core.vector_store import VectorStore
-async def main():
-    s = get_settings()
-    st = VectorStore(s.vector_db.collection, s.embedding.dimension, path=":memory:")
-    await ingest_corpus("fixtures/corpus", st, s)
-    for r in await Retriever(s, st).retrieve("高清网络摄像机 400万像素", top_k=3):
-        print(r.final_rank, r.source, "|", r.heading)
-asyncio.run(main())
-PY
-import asyncio
-from config.settings import get_settings
-from core.ingest import ingest_corpus
-from core.retriever import Retriever
-from core.vector_store import VectorStore
-async def main():
-    s = get_settings()
-    st = VectorStore(s.vector_db.collection, s.embedding.dimension, path=":memory:")
-    await ingest_corpus("fixtures/corpus", st, s)
-    for r in await Retriever(s, st).retrieve("高清网络摄像机 400万像素", top_k=3):
-        print(r.final_rank, r.source, "|", r.heading)
+    print("GEN", gsum)
+    # ② 数值核对（Phase4）：招标数值要求 × 我方语料能力
+    reqs = extract.from_tender_doc(doc)
+    offers = []
+    for f in ["product-guide.md", "qualifications-and-service.md", "cases.md"]:
+        offers += extract.from_text((Path('fixtures/corpus') / f).read_text(encoding='utf-8'), f)
+    checks, csum = Calculator(s).check(reqs, offers)
+    print("CALC", csum.model_dump())
+    for c in checks:
+        if c.verdict.value != "conform":
+            print(" ", c.verdict.value, c.req.id, c.req.label, "|", c.reason[:60])
 asyncio.run(main())
 PY
 uv run uvicorn app.main:app --reload   # 起服务

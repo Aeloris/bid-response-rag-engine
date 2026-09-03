@@ -1,11 +1,36 @@
-"""Phase 4：数值核对引擎（Calculator）。
+# -*- coding: utf-8 -*-
+"""Phase 4：数值核对（Calculator）——招标数值要求 × 我方能力 → 偏离判定。
 
-Phase 0 占位。职责预告——
-- 把技术参数/报价这类"必须算对"的结论，从"让模型编"改为"结构化后确定性计算"；
-- 参数偏离判定（正/无/负）、"负偏离命中★条款=废标"红线识别；
-- 单位换算统一、过程可复现；规格缺失行不硬猜、转待人工。
+对上层暴露：
+    Calculator(settings, llm).check(reqs, offers) -> (list[ParamCheck], CalcSummary)
+抽取入口：
+    extract.from_tender_doc(TenderDoc)         招标侧 → list[ParamReq]
+    extract.from_text(corpus_text, source)     我方语料 → list[OfferClaim]
 """
+from __future__ import annotations
+
+from config.settings import Settings
+from core.calculator import extract, numeric  # noqa: F401  子模块便捷导入
+from core.calculator.schemas import (
+    CalcSummary,
+    OfferClaim,
+    ParamCheck,
+    ParamReq,
+    Verdict,
+)
+from core.calculator.service import Calculator
+
+__all__ = [
+    "Calculator",
+    "extract",
+    "numeric",
+    "ParamReq",
+    "OfferClaim",
+    "ParamCheck",
+    "CalcSummary",
+    "Verdict",
+]
 
 
-class Calculator:
-    """参数表/报价 → 可复现的偏离与风险判定。Phase 4 实现。"""
+def build_calculator(settings: Settings, llm=None) -> Calculator:
+    return Calculator(settings, llm)
