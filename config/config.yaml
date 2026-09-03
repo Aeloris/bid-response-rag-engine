@@ -17,13 +17,14 @@ llm:
 
 # ============ Embedding（Phase 2 用）============
 embedding:
-  provider: dashscope         # dashscope | mock
+  provider: mock              # mock | dashscope；离线优先，无 key 用 mock 伪向量保链路
   model: text-embedding-v3
   dimension: 1024
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
-# ============ 重排（Phase 2 用）============
+# ============ 重排（Phase 2 用；dashscope 接入 Phase 后续，当前 mock 保离线）============
 rerank:
-  provider: dashscope
+  provider: mock              # mock | dashscope
   model: gte-rerank-v2
 
 # ============ 向量库（Phase 2 用；无 docker → qdrant 本地模式）============

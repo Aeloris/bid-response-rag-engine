@@ -62,15 +62,39 @@ class LLMConfig(BaseModel):
         return self
 
 
+def _dashscope_key() -> str | None:
+    """Embedding/Rerank 复用与 LLM 同一个密钥环境变量（DashScope 统一鉴权）。"""
+    return os.getenv("DASHSCOPE_API_KEY")
+
+
 class EmbeddingConfig(BaseModel):
-    provider: str = "dashscope"
+    provider: str = "mock"  # mock | dashscope
     model: str = "text-embedding-v3"
     dimension: int = 1024
+    base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+    @model_validator(mode="after")
+    def _fail_fast_when_dashscope_without_key(self) -> "EmbeddingConfig":
+        if self.provider == "dashscope" and not _dashscope_key():
+            raise ValueError(
+                "embedding.provider=dashscope 但 DASHSCOPE_API_KEY 未设置；"
+                "离线可把 config.yaml 的 embedding.provider 保持为 mock。"
+            )
+        return self
 
 
 class RerankConfig(BaseModel):
-    provider: str = "dashscope"
+    provider: str = "mock"  # mock | dashscope
     model: str = "gte-rerank-v2"
+
+    @model_validator(mode="after")
+    def _fail_fast_when_dashscope_without_key(self) -> "RerankConfig":
+        if self.provider == "dashscope" and not _dashscope_key():
+            raise ValueError(
+                "rerank.provider=dashscope 但 DASHSCOPE_API_KEY 未设置；"
+                "离线可把 config.yaml 的 rerank.provider 保持为 mock。"
+            )
+        return self
 
 
 class VectorDBConfig(BaseModel):
