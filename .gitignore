@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# 虚拟环境
+.venv/
+
+# 密钥环境变量（真实 key 只放 .env，绝不进版本库）
+.env
+
+# 运行时产物（上传文件/向量库/导出件）
+data/

@@ -1,0 +1,56 @@
+# ============ 应用 ============
+app:
+  name: bid-response-agent
+  log_level: INFO
+  data_dir: ./data            # 运行时产物：上传文件/中间JSON/任务状态
+  fixtures_dir: ./fixtures    # 测试/演示数据根目录
+
+# ============ LLM（Phase 0 即可用）============
+llm:
+  provider: mock              # mock | dashscope；没配 key 时保持 mock 离线可跑
+  model: qwen-plus            # 切 dashscope 时生效
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  timeout_sec: 60
+  temperature: 0.2            # 结构化任务偏低温，减少发散
+  max_retries: 3              # Phase 6 用 tenacity 强化为指数退避
+  api_key_env: DASHSCOPE_API_KEY   # key 从环境变量读，绝不放 yaml
+
+# ============ Embedding（Phase 2 用）============
+embedding:
+  provider: dashscope         # dashscope | mock
+  model: text-embedding-v3
+  dimension: 1024
+
+# ============ 重排（Phase 2 用）============
+rerank:
+  provider: dashscope
+  model: gte-rerank-v2
+
+# ============ 向量库（Phase 2 用；无 docker → qdrant 本地模式）============
+vector_db:
+  provider: qdrant_local      # qdrant_local | qdrant_server
+  path: ./data/qdrant
+  collection: tender_corpus
+
+# ============ 分块（Phase 2 用）============
+chunking:
+  mode: heading_aware         # 标题层级感知切分
+  max_chars: 1200
+  overlap_chars: 100
+
+# ============ 检索（Phase 2 用）============
+retrieval:
+  dense_top_k: 20
+  bm25_top_k: 20
+  rrf_k: 60                   # RRF 融合常数
+  rerank_top_n: 6
+
+# ============ 解析（Phase 1 用）============
+parser:
+  rule_anchors:               # 章节锚点词（规则通道：先定位，再让 LLM 抽取）
+    - 评标办法
+    - 技术规格
+    - 资格要求
+    - 废标
+    - ★
+  llm_batch_size: 10
