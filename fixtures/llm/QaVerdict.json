@@ -1,0 +1,9 @@
+{
+  "point_id": "SP-01",
+  "clean": true,
+  "severity": "info",
+  "kind": "judge_offtopic",
+  "reason": "",
+  "suggestion": "",
+  "needs_regen": false
+}

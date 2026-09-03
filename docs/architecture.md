@@ -3,7 +3,7 @@
 > 本文件随代码演进持续更新（AI 编码每阶段都需保持 mermaid 与代码一致）。
 > 设计说明书（需求/痛点/面试点）见父目录 `README.md`。
 
-## Phase 4（当前）：数值核对已就绪
+## Phase 5（当前）：自检质检就绪
 
 - 服务层：FastAPI（`app/main.py`）`/health`、`/`，配置启动即校验。
 - 模型层：`llm/` 抽象 + Mock（默认离线可跑）+ DashScope 骨架。
@@ -15,7 +15,10 @@
   详见 [`docs/generator.md`](generator.md)。
 - 数值核对层：`core/calculator/` 招标数值要求 × 我方能力 → 逐条偏离判定（纯代码计算器，能算的绝不让模型算；
   数字陷阱防误抽 + 单位归一 + 三态一灰 + ★负偏离记账）。详见 [`docs/calculator.md`](calculator.md)。
-- 占位待填：`core/qa|reporter`（Phase 5 起逐 Phase 填充）。
+- 自检质检层：`core/qa/` 三层防线收口 —— 代码判三路（覆盖率/数值偏离复核/数值自洽·超承诺）+
+  LLM-as-Judge（旧数据/不实/答非所问，防御校验）+ 改写闭环限次 → QaReport 风险清单
+  （BLOCK 即 escalation）。详见 [`docs/qa.md`](qa.md)。
+- 占位待填：`core/reporter`（Phase 7）。
 
 ### 系统分层架构
 
@@ -80,12 +83,12 @@ flowchart LR
   M --> N
 ```
 
-## 运行方式（Phase 4）
+## 运行方式（Phase 5）
 
 ```bash
-uv run pytest                # 全部测试（离线，不联网，42 passed）
+uv run pytest                # 全部测试（离线，不联网，71 passed）
 uv run python scripts/make_tender_fixture.py   # 重新生成样例招标书 PDF fixture
-uv run python - <<'PY'       # 一条标：解析评分点 → 入库语料 → 逐点检索 → 带引用应答 → 数值核对（demo）
+uv run python - <<'PY'       # 一条标：解析 → 入库 → 逐点应答 → 数值核对 → 自检质检（demo）
 import asyncio
 from pathlib import Path
 from config.settings import get_settings
@@ -93,29 +96,29 @@ from core.calculator import Calculator, extract
 from core.generator import Generator
 from core.ingest import ingest_corpus
 from core.parser.pipeline import parse_tender
+from core.qa import QaService
 from core.retriever import Retriever
 from core.vector_store import VectorStore
 from llm.mock_provider import MockProvider
 async def main():
-    s = get_settings()
-    llm = MockProvider(s)
-    doc, _ = await parse_tender("fixtures/tender_sample.pdf", llm)   # 解析：评分点+参数表+★
-    # ① 应答生成（Phase3）
+    s = get_settings(); llm = MockProvider(s)
+    doc, _ = await parse_tender("fixtures/tender_sample.pdf", llm)     # ① 解析：评分点+参数表+★
     st = VectorStore(s.vector_db.collection, s.embedding.dimension, path=":memory:")
     await ingest_corpus("fixtures/corpus", st, s)
-    answers, gsum = await Generator(s, llm).generate(
+    answers, gsum = await Generator(s, llm).generate(                   # ② 应答生成（Phase3）
         doc.score_points, Retriever(s, st).retrieve, doc.tender_title)
     print("GEN", gsum)
-    # ② 数值核对（Phase4）：招标数值要求 × 我方语料能力
-    reqs = extract.from_tender_doc(doc)
-    offers = []
+    offers = []                                                         # ③ 数值核对（Phase4）
     for f in ["product-guide.md", "qualifications-and-service.md", "cases.md"]:
         offers += extract.from_text((Path('fixtures/corpus') / f).read_text(encoding='utf-8'), f)
-    checks, csum = Calculator(s).check(reqs, offers)
+    checks, csum = Calculator(s).check(extract.from_tender_doc(doc), offers)
     print("CALC", csum.model_dump())
-    for c in checks:
-        if c.verdict.value != "conform":
-            print(" ", c.verdict.value, c.req.id, c.req.label, "|", c.reason[:60])
+    # ④ 自检质检（Phase5）：三路代码判 + Judge + 改写闭环
+    qrep, _ = await QaService(s, llm).run(points=doc.score_points, answers=answers, checks=checks,
+        offers=offers, tender_title=doc.tender_title, buyer=doc.buyer, deadline=doc.deadline)
+    print("QA", qrep.block_count, qrep.warn_count, qrep.info_count, qrep.escalation_required)
+    for i in qrep.issues:
+        print("  -", i.severity.value.upper(), i.kind.value, i.point_id, "|", i.reason[:70])
 asyncio.run(main())
 PY
 uv run uvicorn app.main:app --reload   # 起服务

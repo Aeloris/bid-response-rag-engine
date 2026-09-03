@@ -60,3 +60,10 @@ parser:
     - 废标
     - ★
   llm_batch_size: 10
+
+# ============ 自检质检（Phase 5 用）============
+qa:
+  consistency_tol: 1.0e-9        # 数值自洽容差（同主题同量纲判冲突用）
+  judge_all: false               # false=只送"有引用且未被代码 BLOCK"的点给 Judge，省 token 且稳
+  max_attempts: 1                # 改写闭环限次（含首轮；1 = 有可修 issue 就改写一轮）
+  min_citations_for_judge: 1     # 无引用的点不进 Judge（宁缺毋滥，直接标需人工）

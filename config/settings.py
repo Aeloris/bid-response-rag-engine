@@ -128,6 +128,15 @@ class ParserConfig(BaseModel):
     llm_batch_size: int = 10
 
 
+class QAConfig(BaseModel):
+    """Phase 5 自检质检开关。"""
+
+    consistency_tol: float = 1e-9  # 数值自洽容差
+    judge_all: bool = False  # False=只送"有引用且未被代码 BLOCK"的点给 Judge（省钱、稳）
+    max_attempts: int = 1  # 改写闭环限次（含首轮，1=只改写一轮）
+    min_citations_for_judge: int = 1  # 无引用的点不进 Judge（宁缺毋滥，直接需人工）
+
+
 class Settings(BaseModel):
     app: AppConfig = Field(default_factory=AppConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
@@ -138,6 +147,7 @@ class Settings(BaseModel):
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     generator: GeneratorConfig = Field(default_factory=GeneratorConfig)
     parser: ParserConfig = Field(default_factory=ParserConfig)
+    qa: QAConfig = Field(default_factory=QAConfig)
 
     @classmethod
     def from_yaml(cls, path: str | Path | None = None) -> "Settings":
