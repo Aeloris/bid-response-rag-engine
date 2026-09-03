@@ -46,6 +46,11 @@ retrieval:
   rrf_k: 60                   # RRF 融合常数
   rerank_top_n: 6
 
+# ============ 生成（Phase 3 用）============
+generator:
+  max_contexts: 4             # 每个评分点最多给生成器的引用块数
+  max_chars_per_context: 1500 # 单引用块截断长度（控 token）
+
 # ============ 解析（Phase 1 用）============
 parser:
   rule_anchors:               # 章节锚点词（规则通道：先定位，再让 LLM 抽取）

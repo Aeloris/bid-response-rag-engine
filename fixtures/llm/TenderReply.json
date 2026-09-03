@@ -1,0 +1,67 @@
+{
+  "answers": [
+    {
+      "point_id": "SP-01",
+      "answer": "我方为本项目提供总体技术方案，采用\"感知层-平台层-应用层\"分层架构：前端感知以高清网络摄像机为主，平台具备电子地图、报警联动与移动端能力并符合 GB/T28181 对接要求，总体方案详见我方产品能力说明 [R1]。我方已部署同类园区平台并完成与上级平台对接，具备针对性实施经验 [R2]。",
+      "citations": [
+        { "ref": "R1", "chunk_id": "", "source": "", "heading": "" },
+        { "ref": "R2", "chunk_id": "", "source": "", "heading": "" }
+      ],
+      "covered_evidence": ["技术方案章节", "系统架构图"],
+      "missing_evidence": [],
+      "needs_human": false,
+      "note": ""
+    },
+    {
+      "point_id": "SP-02",
+      "answer": "我方近三年具备同类园区安防集成项目业绩：高新区 A 区智慧安防改造项目（合同额 860 万元，已竣工验收）、科技城安防升级一期（合同额 520 万元，已终验）等 [R1]。可提供合同关键页与验收证明供核实 [R2]。",
+      "citations": [
+        { "ref": "R1", "chunk_id": "", "source": "", "heading": "" },
+        { "ref": "R2", "chunk_id": "", "source": "", "heading": "" }
+      ],
+      "covered_evidence": ["合同关键页", "验收证明"],
+      "missing_evidence": [],
+      "needs_human": false,
+      "note": ""
+    },
+    {
+      "point_id": "SP-03",
+      "answer": "我方拟派项目经理王强，持机电工程专业一级建造师注册证书（注册单位：示例科技）并具高级工程师职称，具备多个园区安防项目经验 [R1]；核心实施与售后团队稳定配置，可提供简历与社保证明 [R2]。",
+      "citations": [
+        { "ref": "R1", "chunk_id": "", "source": "", "heading": "" },
+        { "ref": "R2", "chunk_id": "", "source": "", "heading": "" }
+      ],
+      "covered_evidence": ["人员简历", "社保证明"],
+      "missing_evidence": [],
+      "needs_human": false,
+      "note": ""
+    },
+    {
+      "point_id": "SP-04",
+      "answer": "项目实施计划按\"深化设计→设备到货→管线施工与安装→平台联调→试运行→验收\"里程碑推进，同类规模项目历史最短实施周期 98 日历天，工期保障措施完备 [R1]。",
+      "citations": [{ "ref": "R1", "chunk_id": "", "source": "", "heading": "" }],
+      "covered_evidence": ["实施计划方案"],
+      "missing_evidence": [],
+      "needs_human": false,
+      "note": ""
+    },
+    {
+      "point_id": "SP-05",
+      "answer": "我方提供整机质保 3 年并可延保至 5 年，7×24 小时热线响应、重大故障 2 小时内到场处置，本地备件库保障关键设备更换 [R1]。",
+      "citations": [{ "ref": "R1", "chunk_id": "", "source": "", "heading": "" }],
+      "covered_evidence": ["售后服务承诺函"],
+      "missing_evidence": ["售后服务承诺函（盖章原件）"],
+      "needs_human": true,
+      "note": "承诺内容可引用；盖章承诺函需商务补充后附入标书"
+    },
+    {
+      "point_id": "SP-06",
+      "answer": "",
+      "citations": [],
+      "covered_evidence": [],
+      "missing_evidence": ["报价一览表（须按招标格式填报）"],
+      "needs_human": true,
+      "note": "价格分需按我方实际报价计算，本模块不自动出价"
+    }
+  ]
+}

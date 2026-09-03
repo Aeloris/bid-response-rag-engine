@@ -13,11 +13,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 from qdrant_client import QdrantClient, models
 
-from core.ingest.chunker import Chunk
+if TYPE_CHECKING:  # 仅类型注解用；避免 vector_store ↔ ingest 循环导入
+    from core.ingest.chunker import Chunk
 
 
 class VectorStore:

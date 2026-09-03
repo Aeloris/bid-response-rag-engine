@@ -116,6 +116,11 @@ class RetrievalConfig(BaseModel):
     rerank_top_n: int = 6
 
 
+class GeneratorConfig(BaseModel):
+    max_contexts: int = 4  # 每个评分点最多给生成器的引用块数
+    max_chars_per_context: int = 1500  # 单引用块截断长度（控 token）
+
+
 class ParserConfig(BaseModel):
     rule_anchors: list[str] = Field(
         default_factory=lambda: ["评标办法", "技术规格", "资格要求", "废标", "★"]
@@ -131,6 +136,7 @@ class Settings(BaseModel):
     vector_db: VectorDBConfig = Field(default_factory=VectorDBConfig)
     chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
+    generator: GeneratorConfig = Field(default_factory=GeneratorConfig)
     parser: ParserConfig = Field(default_factory=ParserConfig)
 
     @classmethod
