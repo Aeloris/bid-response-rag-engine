@@ -175,6 +175,8 @@ async def run_pipeline(
         offers = _load_offers(corpus_dir)
         checks, result.calc = Calculator(settings).check(reqs, offers)
         store.save_step(job_id, "04_calc_summary", result.calc)
+        store.save_step(job_id, "04_calc_checks",   # 每行核对明细：Phase 7 报告器展示用
+                        [c.model_dump(mode="json") for c in checks])
 
         # ---- 5. 自检质检（Phase5）----
         step = "qa"

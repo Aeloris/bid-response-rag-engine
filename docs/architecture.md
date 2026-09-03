@@ -3,7 +3,7 @@
 > 本文件随代码演进持续更新（AI 编码每阶段都需保持 mermaid 与代码一致）。
 > 设计说明书（需求/痛点/面试点）见父目录 `README.md`。
 
-## Phase 6（当前）：API 服务层就绪
+## Phase 7（当前）：报告器与导出就绪
 
 - 服务层：FastAPI（`app/main.py`）把 P1–P5 收成接口 —— `/health`、`/` 根路由，
   `POST /tenders/parse`（评分点速览）、`POST /tasks` + `GET /tasks/{id}` +
@@ -11,6 +11,9 @@
 - 任务编排：`app/jobs.py` `run_pipeline` 按 parse→ingest→generate→calc→qa 跑，
   `JobStore` 文件即状态（data/jobs/{id}/：input.pdf + state.json + result.json + steps/），
   错误分段：输入错→4xx，引擎真异常→failed 并注明步骤，不吞诚实信号。
+- 报告层：`core/reporter/`（schemas/service/render）+ `app/artifacts.py` + `app/routers/reports.py`——
+  **纯派生视图**读落盘产物重排成 BidReport，不重跑引擎；HTML 报告页/目录页 + md/xlsx 导出；
+  UI 取舍：FastAPI 同进程出 HTML（不自建第二服务）。详见 [`docs/report.md`](report.md)。
 - 模型层：`llm/` 抽象 + Mock（默认离线可跑）+ DashScope 骨架。
 - 配置层：`config/config.yaml` 已预留全量参数 + `config/settings.py` 强类型加载（embedding/rerank/generator 默认 mock）。
 - 解析层：`core/parser/` 双通道（规则锚点 + LLM 抽取）已实现，PDF→`TenderDoc`+`ParseReport`。详见 [`docs/parser.md`](parser.md)。
@@ -23,21 +26,21 @@
 - 自检质检层：`core/qa/` 三层防线收口 —— 代码判三路（覆盖率/数值偏离复核/数值自洽·超承诺）+
   LLM-as-Judge（旧数据/不实/答非所问，防御校验）+ 改写闭环限次 → QaReport 风险清单
   （BLOCK 即 escalation）。详见 [`docs/qa.md`](qa.md)。
-- 占位待填：`core/reporter`（Phase 7）。
 
 ### 系统分层架构
 
 ```mermaid
 flowchart TB
   subgraph UI["交互层(Phase7)"]
-    S["Streamlit 面板"]
+    S["浏览器/curl：HTML 报告页 + 目录页<br/>（FastAPI 同进程出，不自建第二服务）"]
   end
-  subgraph API["服务层 FastAPI（Phase6）"]
+  subgraph API["服务层 FastAPI（Phase6/7）"]
     E1["GET /health（已通）"]
     E2["POST /tenders/parse（已通）"]
     E3["POST /tasks 建任务跑五步流水线（已通）"]
     E4["GET /tasks/{id} 轮询状态（已通）"]
     E5["GET /tasks/{id}/result 拉产物（已通）"]
+    E6["GET /reports + /reports/{id} + /export（Phase7 已通）"]
   end
   subgraph CORE["核心业务层"]
     P["core/parser 解析引擎（Phase1）"]
@@ -46,7 +49,7 @@ flowchart TB
     GN["core/generator 应答生成（Phase3）"]
     CL["core/calculator 数值核对（Phase4）"]
     QA["core/qa 自检质检（Phase5）"]
-    RP["core/reporter 报告导出（Phase7）"]
+    RP["core/reporter 报告装配 + md/html/xlsx 渲染（Phase7，纯派生不重跑）"]
   end
   subgraph LLM["模型层 llm/"]
     LP["LLMProvider 抽象"]
@@ -55,9 +58,13 @@ flowchart TB
   end
   subgraph INFRA["基础设施"]
     QD[(Qdrant 本地模式 Phase2)]
+    JD[("data/jobs/{id}/<br/>result.json + steps/ 每步产物")]
     CF["config/config.yaml"]
   end
   S --> API --> CORE
+  CORE --> RP
+  RP -.读落盘产物纯派生.-> JD
+  E6 -.读落盘产物.-> JD
   P --> IG --> QD
   RT --> QD
   CORE --> LP
@@ -83,17 +90,17 @@ flowchart LR
   K -- 是(可自动修) --> L["打回改写(限次)"]
   L --> J
   K -- 超出 --> M["标记需人工 → 风险清单"]
-  K -- 否 --> N["汇总 应答包+漏项+待补+风险 (Phase7)"]
-  N --> O["导出 Markdown/Word/Excel"]
+  K -- 否 --> N["报告装配 BidReport 一屏结论/风险/应答/核对 (Phase7, 纯派生)"]
+  N --> O["导出 HTML 报告页 / Markdown / Excel"]
   M --> N
 ```
 
-## 运行方式（Phase 6）
+## 运行方式（Phase 7）
 
 ```bash
-uv run pytest                # 全部测试（离线，不联网，75 passed）
+uv run pytest                # 全部测试（离线，不联网，81 passed）
 
-# ---- 服务层（Phase 6）----
+# ---- 服务层（Phase 6/7）----
 uv run uvicorn app.main:app --reload          # 起服务；浏览器 http://127.0.0.1:8000/docs
 #   ① 只看评分点速览
 curl -s -F "file=@fixtures/tender_sample.pdf" http://127.0.0.1:8000/tenders/parse
@@ -102,6 +109,12 @@ curl -s -F "file=@fixtures/tender_sample.pdf" http://127.0.0.1:8000/tasks
 #   ③ 拉产物：gen/calc/qa + needs_material + escalation_required
 curl -s http://127.0.0.1:8000/tasks/{JOB_ID}/result
 #   更多契约/时序/状态机/错误分段见 docs/api.md
+#   ④ 报告（Phase 7）：目录页 → HTML 报告 → 下载 md / xlsx
+#      浏览器打开 http://127.0.0.1:8000/reports
+curl -s http://127.0.0.1:8000/reports/{JOB_ID}                      # HTML 报告页
+curl -s -o report.md  http://127.0.0.1:8000/reports/{JOB_ID}/export?fmt=md
+curl -s -o report.xlsx http://127.0.0.1:8000/reports/{JOB_ID}/export?fmt=xlsx
+#   报告器结构/渲染/局限见 docs/report.md
 
 # ---- 引擎直调 demo（库级，不走 HTTP）----
 uv run python scripts/make_tender_fixture.py   # 重新生成样例招标书 PDF fixture

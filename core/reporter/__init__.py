@@ -1,10 +1,6 @@
 """Phase 7：报告与导出（Reporter）。
 
-Phase 0 占位。职责预告——
-- 汇总 应答包/漏项清单/待补材料/风险 为统一报告；
-- 导出 Markdown / Word / Excel，供投标团队接续编辑。
+把引擎产物（应答/核对/风险，已落盘 data/jobs/{id}/）**纯派生**重排成一份 BidReport
+（schemas.py 模型 / service.py build_report），再由三个渲染器导出（render.py）：
+Markdown / HTML（浏览器报告页 + 目录页）/ Excel。不重跑任何引擎。
 """
-
-
-class Reporter:
-    """汇总并导出应答初稿与风险报告。Phase 7 实现。"""

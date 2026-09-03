@@ -2,7 +2,8 @@
 """FastAPI 应用入口（服务层）。
 
 Phase 0：/health 与根路由，证明服务与配置能起；
-Phase 6：挂载 /tenders/parse、/tasks 业务路由 —— 把 P1–P5 五个引擎包成对外接口。
+Phase 6：挂载 /tenders/parse、/tasks 业务路由 —— 把 P1–P5 五个引擎包成对外接口；
+Phase 7：挂载 /reports —— 把 job 产物变成给售前审的 HTML 报告 + md/xlsx 导出。
 
 启动即做配置校验：导入时调用 get_settings()，若 provider=dashscope 而无 key，
 会立刻抛 ValueError（fail fast），而不是等到用户请求才炸。
@@ -11,21 +12,22 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from app.routers import tasks, tenders
+from app.routers import reports, tasks, tenders
 from config.settings import get_settings
 
 settings = get_settings()  # 启动即校验配置
 
 app = FastAPI(
     title=settings.app.name,
-    version="0.6.0",
+    version="0.7.0",
     description="投标应答 Agent：上传招标书 PDF → 逐评分点检索取证→生成应答→数值核对→自检质检 → "
-                "应答包 + 待补材料 + 风险清单（BLOCK 即拦截）。默认 mock 离线可跑。",
+                "应答包 + 待补材料 + 风险清单（BLOCK 即拦截）+ 报告页/导出。默认 mock 离线可跑。",
 )
 
-# ---- Phase 6 业务路由 ----
+# ---- Phase 6/7 业务路由 ----
 app.include_router(tenders.router)
 app.include_router(tasks.router)
+app.include_router(reports.router)
 
 
 @app.get("/health", tags=["system"])
@@ -42,5 +44,6 @@ async def root() -> dict[str, object]:
         "status": "ok",
         "llm_provider": settings.llm.provider,
         "interactive_docs": "/docs",
-        "endpoints": ["/health", "/tenders/parse", "/tasks", "/tasks/{id}", "/tasks/{id}/result"],
+        "endpoints": ["/health", "/tenders/parse", "/tasks", "/tasks/{id}", "/tasks/{id}/result",
+                      "/reports", "/reports/{id}", "/reports/{id}/export"],
     }

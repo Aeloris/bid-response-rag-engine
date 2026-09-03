@@ -76,6 +76,11 @@ steps/
 | POST | `/tasks` | 上传招标书 → 建 job → 同步跑完整流水线 | `JobState`(202) | 400 非 PDF |
 | GET | `/tasks/{id}` | 轮询状态（含当前 step） | `JobState` | 404 不存在 |
 | GET | `/tasks/{id}/result` | 拉整条产物（gen/calc/qa+待补+拦截） | `JobResult` | 404 / 409 未完成 |
+| GET | `/reports` | HTML 目录页（全部任务，可点开/下载） | text/html | — |
+| GET | `/reports/{id}` | HTML 报告页（一屏结论/风险置顶/逐点/核对） | text/html | 404 无任务/无产物 |
+| GET | `/reports/{id}/export?fmt=md\|xlsx` | 下载报告（Markdown / Excel 四 sheet） | 文件 | 404 / 400 fmt 非法 |
+
+> Phase 7 报告器详见 [`docs/report.md`](report.md)：纯派生不重跑引擎、单一产物源三出口、HTML 由 FastAPI 同进程出。
 
 ## 2. HTTP 时序
 
@@ -170,4 +175,9 @@ curl -s -F "file=@fixtures/tender_sample.pdf" http://127.0.0.1:8000/tasks
 # ③ 轮询 / 拉产物
 curl -s http://127.0.0.1:8000/tasks/{JOB_ID}
 curl -s http://127.0.0.1:8000/tasks/{JOB_ID}/result
+
+# ④ 报告（Phase 7）：目录页 / HTML 报告 / 下载 md / xlsx
+curl -s http://127.0.0.1:8000/reports/{JOB_ID}
+curl -s -o report.md  http://127.0.0.1:8000/reports/{JOB_ID}/export?fmt=md
+curl -s -o report.xlsx http://127.0.0.1:8000/reports/{JOB_ID}/export?fmt=xlsx
 ```
