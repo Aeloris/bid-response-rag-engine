@@ -3,12 +3,13 @@
 > 本文件随代码演进持续更新（AI 编码每阶段都需保持 mermaid 与代码一致）。
 > 设计说明书（需求/痛点/面试点）见父目录 `README.md`。
 
-## Phase 0（当前）：项目骨架已就绪
+## Phase 1（当前）：解析引擎已就绪
 
 - 服务层：FastAPI（`app/main.py`）`/health`、`/`，配置启动即校验。
 - 模型层：`llm/` 抽象 + Mock（默认离线可跑）+ DashScope 骨架。
 - 配置层：`config/config.yaml` 已预留全量参数 + `config/settings.py` 强类型加载。
-- 核心层：`core/parser|ingest|retriever|generator|calculator|qa|reporter` 占位就绪，待逐 Phase 填充。
+- 解析层：`core/parser/` 双通道（规则锚点 + LLM 抽取）已实现，PDF→`TenderDoc`+`ParseReport`。详见 [`docs/parser.md`](parser.md)。
+- 占位待填：`core/ingest|retriever|generator|calculator|qa|reporter`（Phase 2 起逐 Phase 填充）。
 
 ### 系统分层架构
 
@@ -73,10 +74,11 @@ flowchart LR
   M --> N
 ```
 
-## 运行方式（Phase 0）
+## 运行方式（Phase 1）
 
 ```bash
 uv run pytest                # 全部测试（离线，不联网）
+uv run python scripts/make_tender_fixture.py   # 重新生成样例招标书 PDF fixture
 uv run uvicorn app.main:app --reload   # 起服务
 # 浏览器打开 http://127.0.0.1:8000/docs 看接口
 ```

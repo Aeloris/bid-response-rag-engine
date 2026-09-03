@@ -6,8 +6,8 @@
 2. 测试结果确定、可断言；
 3. 到接真实 key 时，只是把 provider 从 mock 切成 dashscope，业务代码零改动。
 
-本阶段(Phase 0)所有 chat 都返回同一份 ping fixture；
-后续 Phase 按调用场景传 case（如 generator/answer），实现"按场景给固定返回"。
+fixture 选择规则：调用方传了 `schema` → 读 `fixtures/llm/<Schema名>.json`（如 ExtractionResult.json）；
+未传 schema → 按构造时给的 case（如 ping）读同名 fixture。这样"换真实模型/换离线结果"都只动 fixture。
 """
 from __future__ import annotations
 
@@ -32,9 +32,19 @@ class MockProvider:
         *,
         schema: type | None = None,
     ) -> Any:
-        self.calls.append({"messages": messages, "case": self.case})
+        # 传了 schema → fixture 名取 schema 类名（如 ExtractionResult.json），
+        # 便于"同一管道换真实模型/换 mock 结果"时路径稳定；否则回退 case。
+        name = schema.__name__ if schema is not None else self.case
+        self.calls.append(
+            {
+                "messages": messages,
+                "case": self.case,
+                "fixture": name,
+                "schema": schema.__name__ if schema is not None else None,
+            }
+        )
 
-        path = self._fixture_dir / f"{self.case}.json"
+        path = self._fixture_dir / f"{name}.json"
         if not path.exists():
             raise FileNotFoundError(f"Mock fixture 不存在: {path}")
 
@@ -42,8 +52,8 @@ class MockProvider:
         content = payload.get("content", payload) if isinstance(payload, dict) else payload
 
         if schema is not None:
-            # 若给定了 schema，就按 schema 校验返回（本阶段 fixture 非 dict 时跳过校验）
-            return schema.model_validate(content) if isinstance(content, dict) else content
+            # fixture 文件内容即目标对象（或其键），交给 schema 校验，非法内容立刻暴露
+            return schema.model_validate(content)
         return content
 
     def __repr__(self) -> str:  # pragma: no cover
