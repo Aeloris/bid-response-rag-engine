@@ -99,3 +99,24 @@ def test_llm_missing_requested_point_flagged() -> None:
     assert "未返回" in answers[1].note
     assert summary.total == 2
     assert summary.star_total == 1 and summary.star_answered == 1  # SP_A 是★且已答
+
+
+def test_prose_out_of_range_citation_flagged_human() -> None:
+    """F12 回归：结构化 citations 之外的"正文脚注式 [R#]"越界引用必须被代码拦截。
+
+    上下文只给了 R1，模型却在正文写 [R3] → 不能静默放行；旧逻辑只校验 citations 列表，
+    正文里的 [R3] 从不被发现。"""
+    async def retrieve(query):
+        return [CHUNK]
+
+    ans = PointAnswer(point_id="A", answer="整机质保 3 年[R1]，另援引某外部测试数据[R3]", citations=[])
+    out, _ = run(_gen(FakeLLM([ans])).generate([SP_A], retrieve))
+    a = out[0]
+    assert a.needs_human
+    assert "清单外引用 R3" in a.note
+    assert a.citations == []
+
+    # 正文只引用合法 R1（citations 列表留空也不该误拦）
+    ok = PointAnswer(point_id="A", answer="整机质保 3 年[R1]", citations=[])
+    out2, _ = run(_gen(FakeLLM([ok])).generate([SP_A], retrieve))
+    assert not out2[0].needs_human

@@ -34,9 +34,6 @@ from evals.dataset import (
     point_gold_by_id,
 )
 
-TOP_K = 5  # 检索指标口径：top-5（Recall@5 / MRR@5）
-
-
 def _load_offers(corpus_dir: Path, names: list[str]) -> list:
     """从语料文件抽取我方能力声明（source=文件名，与 extract.from_text 口径一致）。"""
     out: list = []
@@ -64,7 +61,7 @@ async def run_harness(
         raise FileNotFoundError(f"评测 fixture 不存在: {pdf}")
     if not corpus.exists():
         raise FileNotFoundError(f"评测语料目录不存在: {corpus}")
-    k = TOP_K
+    k = settings.eval.top_k  # 检索指标口径：Recall@k / MRR@k（config eval.top_k，默认 5）
 
     timings: dict[str, float] = {}
     real = _real_mode(settings)
@@ -218,6 +215,10 @@ async def run_harness(
         "kinds_found": sorted({i.kind.value for i in qrep_good.issues}),
     }
 
+    # 此刻快照 = 整条合规流水线（解析+生成+合规QA）的 LLM 调用次数；
+    # 下面的对抗坏例评测会再触发 Judge 复审（mock 也有 calls），不能并进"合规流水线"数字。
+    compliance_calls = len(getattr(llm, "calls", []))
+
     bad_rows: list[dict] = []
     for scenario in make_qa_scenarios(answers, offers):
         spec = scenario.spec
@@ -297,5 +298,10 @@ async def run_harness(
         "generation": generation_result,
         "calc": calc_result,
         "qa": qa_result,
-        "perf": {**timings, "llm_calls": llm_calls},
+        "perf": {
+            **timings,
+            "compliance_llm_calls": compliance_calls,  # 整条合规流水线（解析+生成+合规QA）
+            "llm_calls": llm_calls,  # 评测全流程（含对抗坏例重审）；兼容旧字段名
+            "adversarial_llm_calls": llm_calls - compliance_calls,
+        },
     }

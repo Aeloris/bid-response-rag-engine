@@ -45,7 +45,12 @@ _UNITS: list[tuple[str, str, float]] = [
     ("G", "MB", 1024.0),
     ("MB", "MB", 1.0),
     ("M", "MB", 1.0),
-    ("Kbps", "Kbps", 1.0),
+    # 数据速率/时钟：独立量纲，统一折到 Mbps（十进制 1000），防 "1Gbps/100Mbps"
+    # 被 ASCII 前缀误认成 1GB/100MB 存容量；GHz 为时钟频率独立量纲。
+    ("Gbps", "Mbps", 1000.0),
+    ("Mbps", "Mbps", 1.0),
+    ("Kbps", "Mbps", 0.001),
+    ("GHz", "GHz", 1.0),
     ("Lux", "Lux", 1.0),
     ("lux", "Lux", 1.0),
     ("帧", "帧", 1.0),
@@ -68,6 +73,9 @@ _CMP_PRE = [
     ("不得超过", "<="), ("不大于", "<="), ("不多于", "<="), ("不超过", "<="),
     ("不高于", "<="), ("至少不高于", "<="), ("须不高于", "<="), ("以内", "<="),
     ("以内不高于", "<="), ("不迟于", "<="),
+    # 截止/期限措辞：不晚于=≤、不早于=≥（长词在前，"不晚于" 先于裸 "晚于" 命中）
+    ("不得晚于", "<="), ("不晚于", "<="), ("晚于", ">"),
+    ("不得早于", ">="), ("不早于", ">="), ("早于", "<"),
     ("大于", ">"), ("高于", ">"), ("多于", ">"),
     ("小于", "<"), ("低于", "<"), ("少于", "<"),
     ("不超过", "<="),
@@ -180,6 +188,12 @@ def parse_numeric(text: str, *, require_comparator: bool = False) -> NumericValu
     after = after.lstrip(" 　")
     um = _UNIT_RE.match(after)
     raw_unit_word = um.group("unit") if um else ""
+    # ASCII 单位必须是**整词**：若匹配后紧邻仍是 ASCII 字母/数字（如 Mbps/GHz 被 MB/M/G
+    # 前缀误认），说明是未收录的复合单位 → 不当容量解析（宁漏不误导）。
+    if raw_unit_word and raw_unit_word.isascii():
+        rest = after[len(raw_unit_word):]
+        if rest[:1].isascii() and rest[:1].isalnum():
+            raw_unit_word = ""
     if raw_unit_word:
         for w, base, factor in _UNITS:
             if w.lower() == raw_unit_word.lower():

@@ -101,10 +101,12 @@ def chunk_markdown(text: str, source: str, cfg: ChunkingConfig) -> list[Chunk]:
 
 
 def chunk_file(path: str | Path, cfg: ChunkingConfig) -> list[Chunk]:
-    """切一个文件（按扩展名选择解析，当前支持 .md/.txt）。"""
+    """切一个文件（按扩展名选择解析，支持 .md/.markdown/.txt）。"""
     p = Path(path)
     text = p.read_text(encoding="utf-8")
-    if p.suffix.lower() == ".md":
+    if not text.strip():
+        return []  # 空/纯空白文件不产生块（否则会嵌入一个空向量，污染检索）
+    if p.suffix.lower() in (".md", ".markdown"):
         return chunk_markdown(text, p.name, cfg)
     # 纯文本：退化为无标题字符切 + overlap
     out: list[Chunk] = []

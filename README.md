@@ -45,7 +45,7 @@ flowchart LR
 
 ```bash
 uv sync                      # 装依赖（Python 3.11/3.12）
-uv run pytest                # 108 passed，离线确定性
+uv run pytest                # 128 passed，离线确定性
 
 # ① eval-harness：评测回放 + 阈值门禁
 uv run python -m evals.run   # → data/eval/eval_report.{json,md}，五道门禁全过 exit=0
@@ -73,7 +73,7 @@ curl -s -o report.md  http://127.0.0.1:8000/reports/{JOB_ID}/export?fmt=md
 | 检索 Recall@5 / MRR@5 | 混合检索 **0.7333 / 0.7000**；纯向量基线 0.7833 / 0.8000（**mock embedding 下差值如实为负 → 不宣称"混合更优"**） |
 | 质检 | 坏例检出 **3/3 = 1.0**（★负偏离/漏答/超承诺，代码判确定性）；合规草稿 **0** 误报 |
 | 性能 | 样例标端到端约 **0.13s**（离线 mock 墙钟，随机器/负载波动），21 次 LLM 调用 |
-| 门禁 | 五道全过（解析 F1≥0.9 / 混合 R@5≥0.6 / MRR≥0.6 / 检出率=1.0 / 误报=0），`108 tests` 绿 |
+| 门禁 | 五道全过（解析 F1≥0.9 / 混合 R@5≥0.6 / MRR≥0.6 / 检出率=1.0 / 误报=0），`128 tests` 绿 |
 
 > **口径声明**：以上数字只对「本评测集 + mock provider」成立，是防引擎改坏静默回退的回归基线，**不是对真实投标效果的宣称**。需 LLM 语义判断的坏例（张冠李戴）mock 下诚实门控跳过、不计入检出率。真模型版（含真实脱敏多标评测）是后续工作，`README`/简历引用时请保留本口径。详见 [`docs/eval.md`](docs/eval.md)。
 

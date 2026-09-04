@@ -68,14 +68,25 @@ def classify_heading(heading: str) -> set[str]:
 
 
 def find_sections(pages: list[Page]) -> dict[str, SectionSpan]:
-    """扫描全文，输出 栏目类型 → SectionSpan（每类型一章；样例里每类型唯一）。
+    """扫描全文，输出 栏目类型 → SectionSpan（同类跨多章时按文档顺序累计）。
 
-    边界规则：遇到新的"第X章/节"标题行即结束上一个 span；
-    正文行一律追加到当前 span（若当前 span 存在）。
-    每类栏目若多章命中，后者覆盖前者（样例不会发生，真实场景取最后命中并记警告由上层处理）。
+    边界规则：
+    - 遇到新的"第X章/节"标题行即结束上一个章节的正文收集，转入新章节的命中类型；
+    - 一个标题同时命中多类型（如"评标办法及废标条款"）→ **该章正文馈给每个命中类型**，
+      避免只喂优先级最高的一个、其余类型得到空 span 导致内容静默丢失；
+    - 同一类型在多章出现 → **追加累计**（不"后者覆盖前者"），chapter-to-chapter 间补空行
+      分隔，保证文档顺序且不把两章糊成一段；heading/page_start 取该类型首次出现的章节。
     """
     sections: dict[str, SectionSpan] = {}
-    current: SectionSpan | None = None
+    active: set[str] = set()  # 当前正在收集正文的章节命中类型
+    order = list(TYPE_KEYWORDS)
+
+    def _span(field_name: str) -> SectionSpan:
+        sp = sections.get(field_name)
+        if sp is None:
+            sp = SectionSpan(field_name=field_name, heading="", page_start=0)
+            sections[field_name] = sp
+        return sp
 
     for page in pages:
         for raw in page.text.splitlines():
@@ -83,21 +94,28 @@ def find_sections(pages: list[Page]) -> dict[str, SectionSpan]:
             if not line:
                 continue
             if is_chapter_heading(line):
-                # 收尾上一段
+                # 上一章节正文到此结束：给已累计过正文的活跃栏目补一个空行，与新章分隔
+                for t in active:
+                    if sections[t].lines:
+                        sections[t].lines.append("")
                 types = classify_heading(line)
-                current = None
+                active = set()
                 if types:
-                    for field_name in types:
-                        sections[field_name] = SectionSpan(
-                            field_name=field_name, heading=line, page_start=page.page_no
-                        )
-                    # 一个标题只对应一个 span：取优先级最高的类型作为 current
-                    order = list(TYPE_KEYWORDS)
-                    chosen = min(types, key=order.index)
-                    current = sections[chosen]
+                    for field_name in sorted(types, key=order.index):
+                        sp = _span(field_name)
+                        if sp.heading == "" and sp.page_start == 0:
+                            sp.heading = line
+                            sp.page_start = page.page_no
+                    active = types
                 continue
-            if current is not None:
-                current.lines.append(line)
-                current.text = "\n".join(current.lines)
+            if active:
+                for t in active:
+                    _span(t).lines.append(line)
 
-    return sections
+    result: dict[str, SectionSpan] = {}
+    for field_name, sp in sections.items():
+        while sp.lines and sp.lines[-1] == "":
+            sp.lines.pop()  # 去掉尾部因切章产生的空行
+        sp.text = "\n".join(sp.lines)
+        result[field_name] = sp
+    return result

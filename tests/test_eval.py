@@ -77,6 +77,15 @@ def test_metrics_recall_and_mrr_at_k():
     assert m.mrr_at_k(["n1"], gold, 5) == 0.0
 
 
+def test_recall_at_k_deduplicates_duplicate_hits():
+    """F8 回归：同一 gold 键在 top-k 里重复命中（如同一出处被切出多个块）只算一次，
+    否则 Recall@k 会虚高超过 1.0。"""
+    # 旧实现 hit=2/1=2.0；正确去重后 = 1.0
+    assert m.recall_at_k(["g1", "g1"], ["g1"], 2) == pytest.approx(1.0)
+    # top-k 里 gold 只命中一种、但出现两次 → 1/2 而非 2/2
+    assert m.recall_at_k(["g1", "g1", "n"], ["g1", "g2"], 3) == pytest.approx(0.5)
+
+
 def test_metrics_detection_and_fp_rate():
     assert m.detection_rate(3, 3) == 1.0
     assert m.detection_rate(2, 3) == pytest.approx(2 / 3)
@@ -238,6 +247,12 @@ def test_harness_meta_and_perf(eval_report):
     assert eval_report["perf"]["llm_calls"] >= 1
     assert eval_report["generation"]["answered_of_total"] == "5/6"
     assert eval_report["calc"]["under"] == 0
+    # F10：合规流水线单独计数，对抗坏例重审另列；总和一致
+    pf = eval_report["perf"]
+    executed = [b for b in eval_report["qa"]["bad_cases"] if b.get("executed")]
+    assert pf["compliance_llm_calls"] >= 1
+    assert pf["llm_calls"] == pf["compliance_llm_calls"] + pf["adversarial_llm_calls"]
+    assert pf["adversarial_llm_calls"] >= len(executed)  # 重审次数 ≥ 已执行坏例数
 
 
 # ===========================================================================

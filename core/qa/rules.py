@@ -205,12 +205,41 @@ def _canonical_topic(text: str) -> str:
     return s if s in KNOWN_TOPICS else ""
 
 
+# 数值后主题的向前搜索窗口（"5 年质保""60 个月质保服务"这类 数值+单位+主题 倒装）。
+# 只兜底"数值前找不到主题"的情形，且限定在数值后一小段内，防误拾更靠后的独立量主题。
+_FORWARD_WINDOW = 16
+
+
+def _topic_after(base: str, start: int) -> str:
+    """数值之后紧邻出现主题词（倒装写法）时取主题；取窗口内最早的同义词命中。"""
+    tail = base[start:start + _FORWARD_WINDOW]
+    best_key, best_canon, best_start = "", "", len(tail)
+    for key, canon in _ALIAS.items():
+        i = tail.find(key)
+        if i < 0:
+            continue
+        if i < best_start or (i == best_start and len(key) > len(best_key)):
+            best_key, best_canon, best_start = key, canon, i
+    if best_key:
+        return best_canon
+    # 无同义词命中：窗口末一个词段若能对齐白名单主题也认（如 "…5 年最低照度"）
+    runs = _CJK_RUN.findall(tail)
+    return _canonical_topic(runs[-1]) if runs else ""
+
+
 def _topic_for(base: str, start: int) -> str:
-    """数值定位后取主题：优先最近同义词命中（跨措辞如 '…质保…延保至 5 年' 仍对齐质保期），
-    命中不了再退回"数值前最后词段"并只认白名单 —— 两跳都不中就放弃该数量。"""
+    """数值定位后取主题（只认白名单 KNOWN_TOPICS，与 offers 池对齐）：
+    ① 数值前最近同义词命中（跨措辞如 '…质保…延保至 5 年' 仍对齐质保期）——
+       该路径的 canon 必在白名单，直接可用；
+    ② 数值前只有噪音标签（"我方承诺 60 个月…"前词是"承诺"这类白名单外词）时，
+       再看数值后窗口（"5 年质保"倒装）；仍中不了才退回"数值前最后词段"白名单判定。
+    都不中 → 放弃该数量（宁缺毋滥，噪音标签不当主题，避免与能力池对不齐）。"""
     topic = _topic_near(base, start)
-    if topic:
+    if topic in KNOWN_TOPICS:
         return topic
+    after = _topic_after(base, start)
+    if after in KNOWN_TOPICS:
+        return after
     runs = _CJK_RUN.findall(base[:start])
     return _canonical_topic(runs[-1]) if runs else ""
 
@@ -246,13 +275,34 @@ def _iter_claims(text: str):
             pos = pos + dm.end()  # 越过本数字，让下一轮 parse 找句内后续数量
 
 
-def _overlap(v1, op1, v2, op2, eps: float = 1e-9) -> bool:
-    """两个数量各自隐含的取值集合是否相交；不相交即自相矛盾。"""
-    lo1 = -float("inf") if op1 in ("<=", "<") else v1
-    hi1 = float("inf") if op1 in (">=", ">") else v1
-    lo2 = -float("inf") if op2 in ("<=", "<") else v2
-    hi2 = float("inf") if op2 in (">=", ">") else v2
-    return not (hi1 < lo2 - eps or hi2 < lo1 - eps)
+def _overlap(v1, op1, v2, op2, eps: float = 1e-6) -> bool:
+    """两个数量各自隐含的取值集合是否相交；不相交即自相矛盾。
+
+    op=None/"=" 按精确点 [v,v]；严格 "<"/">" 的端点**开**（不含等值）、非严格
+    "<="/">=" 端点**闭** —— 否则 "质保期大于 3 年" 与 "质保期不超过 3 年"
+    (>36 与 ≤36) 会在等值边界被误判为可共存。相接（一端恰在另一端边界）时
+    只有两端都闭才有公共点。
+    """
+    def _iv(v, op):
+        if op in ("<=", "<"):
+            return -float("inf"), v, False, op == "<"
+        if op in (">=", ">"):
+            return v, float("inf"), op == ">", False
+        return v, v, False, False  # None / "=" / 未知 → 精确点
+
+    lo1, hi1, lo1_open, hi1_open = _iv(v1, op1)
+    lo2, hi2, lo2_open, hi2_open = _iv(v2, op2)
+
+    def _separated(a_hi, a_hi_open, b_lo, b_lo_open) -> bool:
+        """区间 a 的上端是否严格在 b 的下端之下 → 两集合不相交。"""
+        if a_hi < b_lo - eps:
+            return True
+        if abs(a_hi - b_lo) <= eps:
+            return a_hi_open or b_lo_open  # 恰在边界相接：任一端开 → 无公共点
+        return False
+
+    return not (_separated(hi1, hi1_open, lo2, lo2_open)
+                or _separated(hi2, hi2_open, lo1, lo1_open))
 
 
 # offer 侧"可选/加购"弱承诺前缀：紧贴数值前出现则该项不是**硬能力**，不进超承诺上限池。

@@ -109,8 +109,8 @@ flowchart LR
 ## 运行方式（Phase 8）
 
 ```bash
-uv run pytest                # 全部测试（离线，不联网，108 passed）
-uv run pytest tests/test_eval.py   # Phase 8 eval 专项（18 项）
+uv run pytest                # 全部测试（离线，不联网，128 passed）
+uv run pytest tests/test_eval.py   # Phase 8 eval 专项（19 项）
 
 # ---- 评测（Phase 8）----
 uv run python -m evals.run         # 跑 mock 确定性基线 → data/eval/eval_report.{json,md} + 五道门禁

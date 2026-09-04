@@ -54,3 +54,30 @@ def test_corpus_files_chunk_cleanly() -> None:
         joined = "".join(c.text for c in chunks)
         src = md.read_text(encoding="utf-8")
         assert len(joined) >= len(src) * 0.6, md.name
+
+
+def test_markdown_extension_uses_heading_chunks(tmp_path: Path) -> None:
+    """F14 回归：.markdown 扩展名应走标题感知切块（与 .md 同待遇），不能退化成纯文本。"""
+    p = tmp_path / "guide.markdown"
+    p.write_text("# 售后\n\n整机质保 3 年。\n\n# 摄像机\n\n分辨率 400 万像素。", encoding="utf-8")
+    chunks = chunk_file(p, CFG)
+    assert len(chunks) >= 2, "两章应各成一块"
+    cam = next(c for c in chunks if "万像素" in c.text)
+    assert "摄像机" in cam.heading and "摄像机" in cam.heading_path
+    # 标题感知下两章各成一块（若退化成纯文本整篇单块则只有 1 块）
+    assert any("质保" in c.text for c in chunks)
+
+
+def test_empty_and_whitespace_files_produce_no_chunks(tmp_path: Path) -> None:
+    """F15 回归：空/纯空白 .txt（及 .md）不得产出空块（否则会嵌入空向量污染检索）。"""
+    empty = tmp_path / "empty.txt"
+    empty.write_text("", encoding="utf-8")
+    assert chunk_file(empty, CFG) == []
+
+    ws = tmp_path / "ws.txt"
+    ws.write_text("   \n\t  \n", encoding="utf-8")
+    assert chunk_file(ws, CFG) == []
+
+    em = tmp_path / "blank.md"
+    em.write_text("", encoding="utf-8")
+    assert chunk_file(em, CFG) == []

@@ -32,7 +32,9 @@ SEV_LABEL = {"block": "BLOCK", "warn": "WARN", "info": "INFO"}
 
 
 def _esc(text: object) -> str:
-    return html.escape(str(text or ""), quote=False)
+    # quote=True：同时转义引号 —— 输出既进文本节点也进属性值（如 id="{_esc(point_id)}"），
+    # 模型/LLM 产出里的引号若原样进入属性会逃出引号注入 HTML。
+    return html.escape(str(text or ""), quote=True)
 
 
 def _mdcell(text: object) -> str:
@@ -97,7 +99,10 @@ def render_markdown(report: BidReport) -> str:
 
     out += ["## 风险清单", ""]
     if not report.issues:
-        out += ["- ✅ 未检出风险。", ""]
+        if report.status == "failed":
+            out += [f"- ⚠️ 引擎中断于 {report.step or '未知步骤'}，风险清单不可用（半成品，不可投）。", ""]
+        else:
+            out += ["- ✅ 未检出风险。", ""]
     else:
         out += ["| 严重级 | 评分点 | 类别 | 问题 | 出处 |", "|---|---|---|---|---|"]
         for i in report.issues:
@@ -223,7 +228,10 @@ def render_html(report: BidReport) -> str:
 
     issues_html: list[str] = []
     if not report.issues:
-        issues_html.append('<p>✅ 未检出风险。</p>')
+        if failed:
+            issues_html.append(f'<p>⚠️ 引擎中断于 <code>{_esc(report.step or "未知步骤")}</code>，风险清单不可用（半成品，不可投）。</p>')
+        else:
+            issues_html.append('<p>✅ 未检出风险。</p>')
     else:
         issues_html.append("<table><tr><th>严重级</th><th>评分点</th><th>类别</th><th>问题</th><th>出处</th></tr>")
         for i in report.issues:
@@ -301,9 +309,16 @@ def render_job_list_html(jobs: list[dict]) -> str:
         rows.append('<p>还没有任务。先跑一条：<code>curl -F "file=@fixtures/tender_sample.pdf" http://127.0.0.1:8000/tasks</code></p>')
     for j in jobs:
         esc = _esc
-        failed = bool(j.get("failed"))
-        badge_cls = "bad" if (failed or j.get("escalation")) else "ok"
-        badge_txt = "失败" if failed else ("拦截" if j.get("escalation") else "可投")
+        st = j.get("status")
+        if st == "failed":
+            badge_cls, badge_txt = "bad", "失败"
+        elif st != "done":
+            # 仍在 pending/running（或状态文件损坏成未知态）：绝不渲染成"可投"，
+            # 目录页不许把执行中的任务误标为已投出/绿可投。
+            badge_cls, badge_txt = "warn", "进行中"
+        else:
+            badge_cls = "bad" if j.get("escalation") else "ok"
+            badge_txt = "拦截" if j.get("escalation") else "可投"
         title = j.get("title") or j.get("job_id")
         rows.append(
             f'<tr><td><code>{esc(j.get("job_id"))}</code></td>'

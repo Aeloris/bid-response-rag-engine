@@ -326,3 +326,49 @@ class TestQaService:
         ans = [_ans("SP-01", "应答 [R1]", citations=[{"ref": "R1"}], missing=["报价一览表"])]
         rep, _ = asyncio.run(QaService(settings).run(points=pts, answers=ans))
         assert rep.needs_material == ["报价一览表"]
+
+
+# ================================================================ 5. 新一轮审计回归（F1/F2/F4）
+
+
+class TestNumericConflictsRegression:
+    def test_inverted_warranty_phrasing_over_commit(self):
+        """F1 回归：倒装 "我方承诺 60 个月质保服务"，数值前只有噪音标签"承诺"。
+        旧逻辑 _topic_for 被噪音词短路 → 主题对不齐质保期能力池 → 超承诺漏检；
+        现在须先认白名单主题（数值后窗口"质保"），再判 60月 > 硬能力 36月 → OVER_COMMIT。"""
+        ans = [_ans("SP-05", "我方承诺 60 个月质保服务")]
+        offers = [_off("质保期", 36, "月", "整机质保3年")]
+        issues = rules.numeric_conflicts(ans, offers)
+        assert issues and issues[0].kind == IssueKind.OVER_COMMIT
+
+    def test_we_provide_years_warranty_over_commit(self):
+        """F1 回归变体：无"质保期"字面、纯"提供 5 年质保服务"也要对齐到质保期。"""
+        ans = [_ans("SP-05", "我司提供 5 年质保服务")]
+        offers = [_off("质保期", 36, "月", "整机质保3年")]
+        issues = rules.numeric_conflicts(ans, offers)
+        assert issues and issues[0].kind == IssueKind.OVER_COMMIT
+
+    def test_deadline_not_later_conflict(self):
+        """F2 回归：150 天工期 与 "不晚于 120 天"（≤120）不相交 → 自相矛盾。
+        （若 "不晚于" 不被映射成 ≤ 而退化成裸点 120，矛盾仍成立；关键是别误放）"""
+        ans = [_ans("SP-04", "我方工期 150 日历天，交付工期不晚于 120 日历天")]
+        issues = rules.numeric_conflicts(ans, [])
+        assert any(i.kind == IssueKind.NUM_CONFLICT for i in issues)
+
+    def test_deadline_late_vs_not_later_strict_boundary(self):
+        """F2 回归：严格 "晚于 120"（>120）与 "不晚于 120"（≤120）在等值边界不相交 → 矛盾。
+        若 "晚于/早于" 未被映射成严格 op，两个点 120 会在边界被误判共存 → 漏检。"""
+        ans = [_ans("SP-04", "交付工期晚于 120 日历天即违约，交付工期不晚于 120 日历天")]
+        issues = rules.numeric_conflicts(ans, [])
+        assert any(i.kind == IssueKind.NUM_CONFLICT for i in issues)
+
+    def test_strict_greater_and_upper_bound_conflict(self):
+        """F4 回归：质保期>3年 与 ≤3年 等值边界不共存（>36 vs ≤36 无交集）→ NUM_CONFLICT。"""
+        ans = [_ans("SP-05", "质保期大于 3 年，但整机质保期不超过 3 年")]
+        issues = rules.numeric_conflicts(ans, [])
+        assert any(i.kind == IssueKind.NUM_CONFLICT for i in issues)
+
+    def test_inclusive_lower_and_upper_bound_coexist(self):
+        """F4 回归：不少于3年(≥36) 与 不超过3年(≤36) 在 3 年整处相交 → 可共存，不误报。"""
+        ans = [_ans("SP-05", "质保期不少于 3 年，质保期不超过 3 年")]
+        assert rules.numeric_conflicts(ans, []) == []

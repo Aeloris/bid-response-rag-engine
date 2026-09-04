@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 import traceback
@@ -193,6 +194,18 @@ async def run_pipeline(
         )
         result.qa = qrep
         store.save_step(job_id, "05_qa_report", qrep)
+    except asyncio.CancelledError:
+        # 请求被取消（客户端断开 / 服务关闭）会以 BaseException 传播，`except Exception`
+        # 兜不住 → 若直接让它逃逸，state.json 永远停在 running，目录页出现"幽灵运行中"。
+        # 取消语义要保留（re-raise），但先尽力把失败态落盘成"取消"。
+        result.status = JobStatus.FAILED
+        result.step = step
+        result.error = "任务被取消（请求中断 / 服务关闭）"
+        try:
+            store.update(job_id, status=JobStatus.FAILED, step=step, error=result.error)
+            store.save_result(job_id, result)
+        finally:
+            raise
     except Exception as exc:  # noqa: BLE001 —— 边界：任何一步炸都转成分段失败
         result.status = JobStatus.FAILED
         result.step = step

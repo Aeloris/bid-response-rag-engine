@@ -32,10 +32,14 @@ def precision_recall(gold: Sequence[Hashable], pred: Sequence[Hashable]) -> tupl
 
 
 def recall_at_k(ranked: Sequence[Hashable], gold: Sequence[Hashable], k: int) -> float:
-    """Recall@k = top-k 里命中的 gold / gold 总数。gold 必须非空。"""
+    """Recall@k = top-k 里命中的 gold / gold 总数。gold 必须非空。
+
+    命中数按**去重**计：同一 gold 键若在 top-k 里出现多次（如同一出处被切出多个
+    重复块、索引里同键命中两处），只算一次 —— 否则重复命中会虚高、可能超过 1.0。
+    """
     assert gold, "Recall@k 要求 gold 非空（无可归因证据的点应单列，不喂本函数）"
     gs = set(gold)
-    hit = sum(1 for item in ranked[:k] if item in gs)
+    hit = len(gs.intersection(ranked[:k]))
     return hit / len(gs)
 
 

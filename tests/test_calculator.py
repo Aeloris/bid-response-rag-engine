@@ -156,3 +156,38 @@ def test_bare_800w_bullet_rescues_under_judgement() -> None:
     checks, summ = _calc().check(reqs, offers)
     assert checks[0].verdict == Verdict.CONFORM and summ.star_under == []
     assert "800" in checks[0].offer.claim
+
+
+def test_parse_data_rate_and_clock_units() -> None:
+    """F3 回归：数据速率/时钟是独立量纲，不能拿存储的 MB/GB 去认。
+
+    1Gbps/100Mbps 这类前 ASCII 曾按 "G"/"M" 前缀折进存储 MB（量纲错、比不了），
+    现在统一折到 Mbps（十进制 1000）；GHz 是时钟频率，独立基准单位 GHz。
+    """
+    mbps = parse_numeric("网络带宽≥100Mbps", require_comparator=True)
+    assert mbps is not None and mbps.value == 100 and mbps.unit == "Mbps" and mbps.operator == ">="
+    gbps = parse_numeric("上联带宽≥1Gbps", require_comparator=True)
+    assert gbps is not None and gbps.value == 1000 and gbps.unit == "Mbps"
+    ghz = parse_numeric("CPU 主频≥2.5GHz", require_comparator=True)
+    assert ghz is not None and ghz.value == 2.5 and ghz.unit == "GHz" and ghz.operator == ">="
+
+
+def test_parse_ascii_unit_boundary_not_prefix() -> None:
+    """F3 回归：ASCII 单位必须整词匹配，杜绝 "MB" 吃掉 "Mbps/GBps" 的歧义前缀。"""
+    # Mbps 已是整词 → 不会退回存储 MB（值、单位都该是 Mbps 而非 MB）
+    n = parse_numeric("带宽≥10Mbps", require_comparator=True)
+    assert n is not None and n.unit == "Mbps"
+    # 存储 MB 本身不受影响
+    assert parse_numeric("内存≥16MB", require_comparator=True).unit == "MB"
+
+
+def test_parse_deadline_comparators() -> None:
+    """F2 回归：截止/期限措辞 不晚于=≤、不早于=≥、晚于=>、早于=< 需映射成 op。"""
+    assert parse_numeric("交付不得晚于 120 日历天", require_comparator=True).operator == "<="
+    assert parse_numeric("交付不晚于 120 日历天", require_comparator=True).operator == "<="
+    n = parse_numeric("设备到货不得早于 60 日历天", require_comparator=True)
+    assert n is not None and n.operator == ">=" and n.value == 60
+    m = parse_numeric("晚于 90 日历天视为超期", require_comparator=True)
+    assert m is not None and m.operator == ">"
+    k = parse_numeric("早于 45 日历天提交", require_comparator=True)
+    assert k is not None and k.operator == "<"

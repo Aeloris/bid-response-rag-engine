@@ -279,3 +279,50 @@ def test_report_endpoints_read_job_dir(tmp_path: Path) -> None:
             assert client.get("/reports/ghost/export?fmt=md").status_code == 404
     finally:
         app.dependency_overrides.pop(get_job_store, None)
+
+
+def test_failed_report_risk_section_not_claiming_clean() -> None:
+    """F6 回归：FAILED 且无产物 → 风险清单不许显示"✅ 未检出风险"（半成品不能假装干净），
+    应提示清单不可用。"""
+    r = build_report(result=_failed_result(), doc=None, answers=None, checks=None)
+    md = render_markdown(r)
+    assert "风险清单不可用" in md and "未检出风险" not in md
+    html = render_html(r)
+    assert "风险清单不可用" in html and "未检出风险" not in html
+
+
+def test_html_point_id_attribute_escaped() -> None:
+    """F7 回归：point_id 进 id="{...}" 属性前必须转义引号，否则注入可逃出属性。"""
+    from app.schemas import PointBrief
+    from core.reporter.service import build_report
+
+    result = _failed_result()
+    result.score_points = [
+        PointBrief(id='SP-01" onmouseover="alert(1)', score=5, is_star=True,
+                   content="★ 质保期不少于 36 个月", evidence_type=["质保承诺函"]),
+    ]
+    r = build_report(result=result, doc=None, answers=None, checks=None)
+    html = render_html(r)
+    assert 'onmouseover="alert(1)' not in html      # 引号已被转义，payload 不可能原样落地
+    assert "&quot;" in html
+
+
+def test_running_job_index_badge_not_ke_tou(tmp_path: Path) -> None:
+    """F5 回归：执行中(pending/running)任务在目录页显示"进行中"，不许假绿"可投"。"""
+    from app.main import app
+
+    store = JobStore(tmp_path / "jobs")
+    job_id = "rep-running"
+    store.create(job_id, b"%PDF-1.4 demo")
+    store.update(job_id, status=JobStatus.RUNNING, step="generate")
+
+    app.dependency_overrides[get_job_store] = lambda: store
+    try:
+        with TestClient(app) as client:
+            lst = client.get("/reports")
+            assert lst.status_code == 200
+            assert job_id in lst.text
+            assert "进行中" in lst.text
+            assert "可投" not in lst.text            # 唯一任务在跑 → 全文不得出现"可投"
+    finally:
+        app.dependency_overrides.pop(get_job_store, None)

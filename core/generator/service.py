@@ -11,6 +11,7 @@ generate() 流程：
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
 
 from config.settings import Settings
@@ -21,6 +22,19 @@ from core.parser.schemas import ScorePoint
 from core.retriever.schemas import ScoredChunk
 
 RetrieveFn = Callable[[str], Awaitable[list[ScoredChunk]]]
+
+# 正文里形如 [R5] 的引用标注（模型很可能在句子末尾带脚注式引用，结构化 citations 之外）
+_PROSE_REF = re.compile(r"\[R(\d+)\]")
+
+
+def _invalid_prose_refs(text: str, legal: set[str]) -> list[str]:
+    """扫正文 [R#] 标注，返回不在给定引用清单里的编号（去重、按号排序）。"""
+    found: set[str] = set()
+    for m in _PROSE_REF.finditer(text or ""):
+        ref = f"R{m.group(1)}"
+        if ref not in legal:
+            found.add(ref)
+    return sorted(found, key=lambda s: int(s[1:]))
 
 
 def _gap_answer(point: ScorePoint, note: str) -> PointAnswer:
@@ -120,6 +134,11 @@ class Generator:
         note_bits = [raw.note] if raw.note else []
         if invalid:
             note_bits.append(f"发现 {invalid} 条引用编号不在给定清单，已剔除")
+        # 正文脚注式 [R#]：结构化清单之外还可能"句子尾巴带引用"，清单外的必须标需人工
+        prose_bad = _invalid_prose_refs(raw.answer, set(ctx_by_ref))
+        if prose_bad:
+            needs_human = True
+            note_bits.append("正文含清单外引用 " + "、".join(prose_bad) + "，已标需人工")
         return PointAnswer(
             point_id=raw.point_id,
             answer=raw.answer,

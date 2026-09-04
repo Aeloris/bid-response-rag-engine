@@ -118,7 +118,8 @@ def render_markdown(r: dict, gate_rows: list[tuple[str, object, object, bool]] |
     add("")
     add(f"- 整条标端到端 **{_fmt(pf['total_sec'], 3)}s**（解析 {_fmt(pf['parse_sec'], 3)} / 入库 {_fmt(pf['ingest_sec'], 3)}"
         f" / 生成 {_fmt(pf['generate_sec'], 3)} / 数值核对 {_fmt(pf['calc_sec'], 3)} / QA {_fmt(pf['qa_good_sec'], 3)}）")
-    add(f"- LLM 调用次数（整条合规流水线）：**{pf['llm_calls']}**")
+    add(f"- LLM 调用次数（整条合规流水线）：**{pf['compliance_llm_calls']}**"
+        + (f"；评测全流程（含 {pf['adversarial_llm_calls']} 次对抗坏例重审）共 **{pf['llm_calls']}**" if pf.get("llm_calls") else ""))
     add("")
 
     if gate_rows is not None:

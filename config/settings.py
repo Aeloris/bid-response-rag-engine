@@ -62,39 +62,16 @@ class LLMConfig(BaseModel):
         return self
 
 
-def _dashscope_key() -> str | None:
-    """Embedding/Rerank 复用与 LLM 同一个密钥环境变量（DashScope 统一鉴权）。"""
-    return os.getenv("DASHSCOPE_API_KEY")
-
-
 class EmbeddingConfig(BaseModel):
     provider: str = "mock"  # mock | dashscope
     model: str = "text-embedding-v3"
     dimension: int = 1024
     base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
-    @model_validator(mode="after")
-    def _fail_fast_when_dashscope_without_key(self) -> "EmbeddingConfig":
-        if self.provider == "dashscope" and not _dashscope_key():
-            raise ValueError(
-                "embedding.provider=dashscope 但 DASHSCOPE_API_KEY 未设置；"
-                "离线可把 config.yaml 的 embedding.provider 保持为 mock。"
-            )
-        return self
-
 
 class RerankConfig(BaseModel):
     provider: str = "mock"  # mock | dashscope
     model: str = "gte-rerank-v2"
-
-    @model_validator(mode="after")
-    def _fail_fast_when_dashscope_without_key(self) -> "RerankConfig":
-        if self.provider == "dashscope" and not _dashscope_key():
-            raise ValueError(
-                "rerank.provider=dashscope 但 DASHSCOPE_API_KEY 未设置；"
-                "离线可把 config.yaml 的 rerank.provider 保持为 mock。"
-            )
-        return self
 
 
 class VectorDBConfig(BaseModel):
@@ -176,6 +153,20 @@ class Settings(BaseModel):
         p = Path(path) if path else DEFAULT_CONFIG_PATH
         data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
         return cls(**data)
+
+    @model_validator(mode="after")
+    def _fail_fast_when_any_dashscope_without_key(self) -> "Settings":
+        """Embedding/Rerank 与 LLM 共用同一鉴权密钥（DashScope 统一）→ 一律按 llm.api_key_env
+        指定的环境变量检查，而不是写死 DASHSCOPE_API_KEY（否则用户改了 api_key_env 会漏检）。
+        """
+        need_key = os.getenv(self.llm.api_key_env)
+        for name, prov in (("embedding", self.embedding.provider), ("rerank", self.rerank.provider)):
+            if prov == "dashscope" and not need_key:
+                raise ValueError(
+                    f"{name}.provider=dashscope 但环境变量 {self.llm.api_key_env} 未设置；"
+                    f"离线可把 config.yaml 的 {name}.provider 保持为 mock。"
+                )
+        return self
 
     @property
     def repo_root(self) -> Path:
