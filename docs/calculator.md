@@ -10,7 +10,7 @@
 | 验收项 | 结果 |
 |---|---|
 | `uv run pytest` | ✅ 42 passed（含 Phase 0–3 回归 26 + 新增 16） |
-| 样例端到端核对 | ✅ 招标侧 14 条数值要求 → 我方语料 14 条能力 → 全配对，0 unknown |
+| 样例端到端核对 | ✅ 招标侧 14 条数值要求 → 我方语料能力 15 条（product-guide 11 + qualifications 4）→ 全配对，0 unknown |
 | 判定分布 | ✅ conform=12 · over=2 · under=0 · unknown=0（样例产品刻意全达标，无负偏离、无误报） |
 | 解析防误抽 | ✅ 7×24 / 1/1.8英寸 / GB/T28181 / 2560×1440 / H.265 / 付款30% 等一概不当数值 |
 | 单位归一 | ✅ 年→月、日历天→天、GB/TB→MB、万像素→像素，同量纲才比 |
@@ -22,7 +22,7 @@
 ```
 招标侧要求 14 条：技术参数表 11（分辨率/照度/接入路数/存储周期/CPU/内存/AI分析/误报率/容量/并发/光缆芯）
                   ★ 条款 3（工期≤120天 / 质保≥3年 / 重大故障≤2小时到场）
-我方能力   14 条：product-guide.md 10 + qualifications-and-service.md 4（cases.md 业绩金额被正确忽略）
+我方能力   15 条：product-guide.md 11 + qualifications-and-service.md 4（cases.md 业绩金额被正确忽略）
 核对结果  conform=12  over=2  under=0  unknown=0
   over 示例：最低照度 我方0.003Lux < 要求≤0.005Lux（更低更优）；工期 我方98天 < ≤120天（更短更优）
   ★ 全覆盖满足 → star_under = []（样例=合规投标人，引擎零误报）
@@ -112,7 +112,7 @@ flowchart TD
 ## 7. 测试清单
 
 ```
-tests/test_calculator.py      单测 14：解析陷阱(万/月/日历天/内/噪音/编号) · 单位归一 · 比较方向(边界/over/under)
+tests/test_calculator.py      单测 15：解析陷阱(万/月/日历天/内/噪音/编号) · 单位归一 · 比较方向(边界/over/under)
                               抽取同义词 · ★under 记账 · 无能力→UNKNOWN · 刚过线选型 · 噪音标签不入能力表
 tests/test_calculation_e2e.py 端到端：PDF→TenderDoc→14要求×语料能力→核对；断言 无负偏离/无误报/★全满足/出处可溯源
 ```

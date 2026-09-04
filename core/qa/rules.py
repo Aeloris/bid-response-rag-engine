@@ -243,6 +243,28 @@ def _overlap(v1, op1, v2, op2, eps: float = 1e-9) -> bool:
     return not (hi1 < lo2 - eps or hi2 < lo1 - eps)
 
 
+# offer 侧"可选/加购"弱承诺前缀：紧贴数值前出现则该项不是**硬能力**，不进超承诺上限池。
+# 与应答侧 _HEDGE 同一"数值前窗口"思路，但词表更窄：offer 里的"约/可达/支持"仍算可支撑能力
+# （如"响应约 30 分钟"仍能佐证 30 分钟级），只有"可延保至/可选/扩展至/选配/加购"这类显式
+# 可选项才抬高了上限会骗过 OVER_COMMIT（"质保3年可延保至5年"→ 上限 60，掩盖承诺 4 年已超 36）。
+_OFFER_HEDGE_PRE = (
+    "可延保至", "可延长至", "可延保", "可延长", "可选",
+    "可扩展至", "支持扩展至", "扩展至", "可选购", "选配", "可选配",
+    "可选装", "加购", "另购", "需另购", "另行购买",
+)
+
+
+def _offer_is_hedged(o: OfferClaim) -> bool:
+    """我方声明是否为显式可选/延保项（弱承诺）——是则不能当"可拍板的硬能力"计入超承诺上限。"""
+    text = o.claim or ""
+    m = re.search(r"\d+(?:\.\d+)?", text)
+    if m is None:
+        return False
+    # parse_numeric 只认句内**首个**数字；同窗口只查首个数字前，避免把同句"基础值"误伤为弱承诺
+    window = text[max(0, m.start() - 12):m.start()]
+    return any(h in window for h in _OFFER_HEDGE_PRE)
+
+
 def numeric_conflicts(answers: list, offers: list[OfferClaim] | None = None) -> list[QaIssue]:
     """读应答正文，找两类确定性风险：
     - NUM_CONFLICT：同一应答内、同主题同量纲的硬承诺互相矛盾（98 天 vs 120 天）；
@@ -250,8 +272,11 @@ def numeric_conflicts(answers: list, offers: list[OfferClaim] | None = None) -> 
     """
     offers_by: dict[tuple[str, str], list[float]] = {}
     for o in offers or []:
-        if o.numeric is not None and o.topic in KNOWN_TOPICS:
-            offers_by.setdefault((o.topic, o.numeric.unit), []).append(o.numeric.value)
+        if o.numeric is None or o.topic not in KNOWN_TOPICS:
+            continue
+        if _offer_is_hedged(o):
+            continue  # 可延保至 5 年 / 可选 60 月：是可选项不是硬能力，进池会把上限抬虚、放走超承诺
+        offers_by.setdefault((o.topic, o.numeric.unit), []).append(o.numeric.value)
 
     issues: list[QaIssue] = []
     for a in answers:

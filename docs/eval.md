@@ -11,7 +11,7 @@
 
 | 验收项 | 结果 |
 |---|---|
-| `uv run pytest` | ✅ 99 passed（Phase 0–7 回归 81 + 新增 18） |
+| `uv run pytest` | ✅ 100 passed（Phase 0–7 回归 82 + 新增 18） |
 | `uv run python -m evals.run` | ✅ 落 eval_report.json/.md，五道门禁全过 |
 | 评测集 gold | ✅ 解析 6 评分点 / ★5 / 参数表 7·★[1,3,5] + 检索证据人工策展 + 质检 1好例4坏例 |
 | 指标纯函数 | ✅ Precision/Recall/F1、Recall@k、MRR@k、检出率/误报率 全确定性、单测手算 |
@@ -24,7 +24,7 @@
 parse    评分点 P/R/F1 = 1.0/1.0/1.0 · 逐点(分值,★)一致 1.0 · ★条款 5=5 · 参数表 7·★[1,3,5] 一致
 retrieval 混合 R@5 0.7333 / MRR@5 0.7000    纯向量基线 0.7833 / 0.8000   差值 −0.05 / −0.10
 qa      好例误报 0（WARN2: material_gap/unanswered_point） · 坏例检出 3/3 = 1.0 · 张冠李戴 gated
-perf    端到端 0.155s · LLM calls 21 · 应答覆盖 5/6 · 数值核对 14=conform12/over2/under0
+perf    端到端约 0.13s（离线 mock 墙钟，随机器/负载波动）· LLM calls 21 · 应答覆盖 5/6 · 数值核对 14=conform12/over2/under0
 gate    解析F1 1.0≥0.9 · R@5 0.733≥0.6 · MRR@5 0.700≥0.6 · 检出率 1.0≥1.0 · 误报 0≤0 —— 全 ✅
 ```
 
@@ -90,7 +90,7 @@ gold 是谁标、哪天标、依据哪份 fixture/语料，都写进 `Annotation
 | 质检好例 | 合规样例草稿 | 期望零 BLOCK / 零误报 |
 | 质检坏例 | 4 个（star_under / drop_point / overcommit / stale_buyer） | 3 个代码判可确定性检出；stale 需 Judge |
 
-检索 gold 的 12 块证据全部真实存在于切块索引（有单测 `test_gold_evidence_all_exist_in_chunk_index` 兜底，
+检索 gold 的 11 块证据全部真实存在于切块索引（有单测 `test_gold_evidence_all_exist_in_chunk_index` 兜底，
 防标不存在的块当正确答案）。
 
 ## 5. 指标定义（口径）

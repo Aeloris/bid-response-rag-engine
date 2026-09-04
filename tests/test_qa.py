@@ -168,6 +168,18 @@ class TestNumericConflicts:
         offers = [_off("质保期", 36, "月", "质保3年")]
         assert rules.numeric_conflicts(ans, offers) == []
 
+    def test_optional_extension_offer_does_not_raise_cap(self):
+        """OVER_COMMIT 回归：offer 语料"整机质保3年，可延保至5年"的 5 年是**可选项**，
+        不能把能力上限抬到 60 而放走"承诺 4 年"(48 > 硬能力 36) 的超承诺。"""
+        offers = [_off("质保期", 36, "月", "整机质保3年"),
+                  _off("质保期", 60, "月", "可延保至5年")]
+        issues = rules.numeric_conflicts([_ans("SP-05", "我方质保期 4 年")], offers)
+        assert issues and issues[0].kind == IssueKind.OVER_COMMIT
+        # 直白承诺到硬能力上限 3 年仍干净；直白承诺 5 年（硬）超硬能力 36 → 照拦
+        assert rules.numeric_conflicts([_ans("SP-05", "质保期 3 年")], offers) == []
+        bad = rules.numeric_conflicts([_ans("SP-05", "我方质保期 5 年")], offers)
+        assert bad and bad[0].kind == IssueKind.OVER_COMMIT
+
     def test_noise_and_empty_silent(self):
         ans = [_ans("SP-01", "符合 GB/T28181 对接，支持 7×24 小时运行"),
                _ans("SP-06", "")]
