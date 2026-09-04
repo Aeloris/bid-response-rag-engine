@@ -208,22 +208,32 @@ def _canonical_topic(text: str) -> str:
 # 数值后主题的向前搜索窗口（"5 年质保""60 个月质保服务"这类 数值+单位+主题 倒装）。
 # 只兜底"数值前找不到主题"的情形，且限定在数值后一小段内，防误拾更靠后的独立量主题。
 _FORWARD_WINDOW = 16
+# 独立量短语的分界字：一个数量（数值+单位）与"它真正修饰的主题"之间不应出现并列/连接词。
+# 前向窗口扫到这些字即截断 —— 否则 "…提供150TB及整机质保期3年" 里 150 会被归给 "及" 之后的
+# 质保期（跨量错挂主题：漏判容量超卖，还可能凭空造出与真承诺同单位的冲突）。
+_FORWARD_SEP = "及与和并且或等而、，,。；;：:？?！!）)】]〉>（(【[〈<"
 
 
 def _topic_after(base: str, start: int) -> str:
-    """数值之后紧邻出现主题词（倒装写法）时取主题；取窗口内最早的同义词命中。"""
+    """数值之后紧邻出现主题词（倒装写法）时取主题；取首个分界字之前最早的同义词命中。"""
     tail = base[start:start + _FORWARD_WINDOW]
-    best_key, best_canon, best_start = "", "", len(tail)
+    sep_pos = len(tail)
+    for ch in _FORWARD_SEP:
+        j = tail.find(ch)
+        if j != -1 and j < sep_pos:
+            sep_pos = j
+    head = tail[:sep_pos]  # 只看"本数量短语"内的文字，绝不跨到分界字后的另一个数量
+    best_key, best_canon, best_start = "", "", len(head)
     for key, canon in _ALIAS.items():
-        i = tail.find(key)
+        i = head.find(key)
         if i < 0:
             continue
         if i < best_start or (i == best_start and len(key) > len(best_key)):
             best_key, best_canon, best_start = key, canon, i
     if best_key:
         return best_canon
-    # 无同义词命中：窗口末一个词段若能对齐白名单主题也认（如 "…5 年最低照度"）
-    runs = _CJK_RUN.findall(tail)
+    # 无同义词命中：分界前的末一个词段若能对齐白名单主题也认（如 "…5 年最低照度"）
+    runs = _CJK_RUN.findall(head)
     return _canonical_topic(runs[-1]) if runs else ""
 
 
@@ -262,13 +272,18 @@ def _iter_claims(text: str):
         mbase = _NOISE.sub(lambda m: " " * len(m.group(0)), base)
         pos = 0
         while pos < len(mbase):
-            n = parse_numeric(mbase[pos:], require_comparator=False)
-            if n is None or not n.unit:
-                break  # 本窗口剩余部分没有"带单位/比较词"的数量了
             dm = re.search(r"\d+(?:\.\d+)?", mbase[pos:])
             if dm is None:
-                break
+                break  # 后面没有数字了
             start = pos + dm.start()
+            n = parse_numeric(mbase[pos:], require_comparator=False)
+            # parse_numeric 只认**本窗口开头起的首个数字**：它返回 None / 无单位，只说明这一个数
+            # 不是可比量（价格/型号/条号/倍率…），**不代表后面没有**"带单位"的真实承诺 ——
+            # "投标总价500万元并承诺整机质保期4年"若在此 break，会把句内 4年 一起放弃。
+            # 正确姿势：跳到本数字之后继续扫（每轮至少前进 1 个字符，循环必终止）。
+            if n is None or not n.unit:
+                pos = pos + dm.end()
+                continue
             topic = _topic_for(base, start)
             hedge = any(h in base[max(0, start - 8):start] for h in _HEDGE)
             yield topic, n.value, n.unit, n.operator, n.raw, hedge

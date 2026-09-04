@@ -119,7 +119,8 @@ async def run_harness(
     retrieval_rows: list[dict] = []
     for p in doc.score_points:
         query = build_query(p, doc.tender_title)
-        gk = gold_keys[p.id]
+        # gold 没有该点映射（引擎多抽/新加评分点而 gold 未同步）→ 按"非可归因"单列，不 KeyError 崩整场评测
+        gk = gold_keys.get(p.id) or []
         # 混合检索：引擎整条 Dense+BM25→RRF→Rerank，取前 k
         hyb = await retriever.retrieve(query, top_k=k)
         hyb_keys = chunk_keys(hyb)

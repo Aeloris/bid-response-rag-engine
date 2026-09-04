@@ -10,15 +10,12 @@
 """
 from __future__ import annotations
 
-import json
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
 
 from app.artifacts import load_job_artifacts
 from app.deps import get_job_store
 from app.jobs import JobStore
-from app.schemas import JobState
 from core.reporter.render import (
     render_html,
     render_job_list_html,
@@ -39,11 +36,12 @@ def _list_jobs(store: JobStore) -> list[dict]:
         state_p = d / "state.json"
         if not d.is_dir() or not state_p.exists():
             continue
-        try:
-            state = JobState.model_validate(json.loads(state_p.read_text(encoding="utf-8")))
-        except Exception:  # noqa: BLE001 —— 状态文件坏则不显示该行
+        # 统一走 store.get_state：state.json 损坏会被降级成一个 FAILED 任务（红标 + 可读原因），
+        # 而不是跳过该行/整页 500 —— 文件即状态，损坏也要诚实可见。
+        state = store.get_state(d.name)
+        if state is None:
             continue
-        result = store.load_result(d.name)
+        result = store.load_result(d.name)  # 容错：result.json 损坏 → None（按无产物处理）
         jobs.append({
             "job_id": d.name,
             "title": result.tender_title if result else "",

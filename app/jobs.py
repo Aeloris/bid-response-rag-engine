@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 import traceback
 from pathlib import Path
@@ -37,6 +38,18 @@ from app.schemas import (
 
 # 语料文件约定（docs 与 demo 沿用）：产品手册 / 资质与服务 / 案例
 _CORPUS_FILES = ("product-guide.md", "qualifications-and-service.md", "cases.md")
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """同目录临时文件 + os.replace 原子落盘：进程中途崩溃不留下半截 JSON。
+
+    配合容错读取（_read_state / load_result）双保险：正常写路径不再可能产生截断文件，
+    读取端的降级只兜"外部手动改坏 / 磁盘异常"这类残局。
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + f".{os.getpid()}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
 
 
 class JobStore:
@@ -68,7 +81,7 @@ class JobStore:
             status=status or cur.get("status", JobStatus.PENDING.value),
             step=step if step is not None else cur.get("step", ""),
             error=error if error is not None else cur.get("error", ""),
-            created_at=cur.get("created_at", self._now()),
+            created_at=cur.get("created_at") or self._now(),
         )
         self._write_state(state)
         return state
@@ -77,6 +90,16 @@ class JobStore:
         cur = self._read_state(job_id)
         if not cur:
             return None
+        if cur.get("__corrupt__"):
+            # state.json 损坏（非我方正常写入产物）→ 降级成"失败 + 可读原因"，诚实红标，
+            # 而不是任务消失 / 接口 500。created_at 未知故留空，目录页按文件 mtime 排序不受影响。
+            return JobState(
+                job_id=job_id,
+                status=JobStatus.FAILED,
+                step="",
+                error=(f"state.json 损坏无法读取（JSON 截断或外部改坏），任务状态不可信，"
+                       f"请人工核对 data/jobs/{job_id} 目录"),
+            )
         return JobState.model_validate(cur)
 
     def exists(self, job_id: str) -> bool:
@@ -84,16 +107,17 @@ class JobStore:
 
     # ---- 产物 ----
     def save_result(self, job_id: str, result: JobResult) -> None:
-        d = self._dir(job_id)
-        (d / "result.json").write_text(
-            result.model_dump_json(indent=2), encoding="utf-8"
-        )
+        _atomic_write_text(self._dir(job_id) / "result.json",
+                           result.model_dump_json(indent=2))
 
     def load_result(self, job_id: str) -> JobResult | None:
         p = self.root / job_id / "result.json"
         if not p.exists():
             return None
-        return JobResult.model_validate_json(p.read_text(encoding="utf-8"))
+        try:
+            return JobResult.model_validate_json(p.read_text(encoding="utf-8"))
+        except (ValueError, OSError):  # 结果损坏（截断/外部改坏）→ 按"无产物"降级，不让 500
+            return None
 
     def save_step(self, job_id: str, name: str, obj) -> None:
         """每步产物落盘（审计 / Phase8 回放）。obj 可以是 pydantic 或 dict。"""
@@ -103,21 +127,24 @@ class JobStore:
             payload = obj.model_dump(mode="json")
         else:
             payload = obj
-        (d / f"{name}.json").write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        _atomic_write_text(d / f"{name}.json",
+                           json.dumps(payload, ensure_ascii=False, indent=2))
 
     # ---- 内部 ----
     def _write_state(self, state: JobState) -> None:
-        (self._dir(state.job_id) / "state.json").write_text(
-            state.model_dump_json(indent=2), encoding="utf-8"
-        )
+        _atomic_write_text(self._dir(state.job_id) / "state.json",
+                           state.model_dump_json(indent=2))
 
     def _read_state(self, job_id: str) -> dict:
         p = self.root / job_id / "state.json"
         if not p.exists():
             return {}
-        return json.loads(p.read_text(encoding="utf-8"))
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            # 文件损坏（本应被原子写杜绝，仅兜外部改坏/磁盘异常）→ 交给 get_state 降级，
+            # 降级成一个"失败 + 可读原因"的任务，而不是 500 / 目录页整页崩。
+            return {"__corrupt__": True, "job_id": job_id}
 
     @staticmethod
     def _now() -> str:
@@ -149,6 +176,14 @@ async def run_pipeline(
         doc, report = await parse_tender(pdf_path, llm)
         store.save_step(job_id, "01_parse_doc", doc)
         store.save_step(job_id, "01_parse_report", report)
+        # 空解析门禁：0 个评分点 = 扫描件/无文本层/评分规则未命中。若不拦，会继续走完
+        # ingest→generate→calc→qa：0 点上 QA 空报 BLOCK=0 → DONE → 报告假绿"可投"。
+        # 这里显式判 failed（分段到 parse，错误见 state.error），不许空结果冒充可投。
+        if not doc.score_points:
+            raise ValueError(
+                "解析未能提取出任何评分点（PDF 可能无文本层/为扫描件，或评分栏目规则未命中），"
+                "任务中止为 failed，避免空结果冒充可投"
+            )
         result.tender_title = doc.tender_title
         result.score_points = score_points_brief(doc)
 

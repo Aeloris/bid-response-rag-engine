@@ -38,6 +38,15 @@ async def parse_tender_file(
     tmp.write_bytes(data)
     try:
         doc, report = await parse_tender(tmp, llm)
+    except HTTPException:
+        raise
+    except (ValueError, OSError, RuntimeError) as exc:
+        # 输入级解析失败（PDF 无页面/损坏/无文本层等，fitz/loader 抛 ValueError、OSError、
+        # RuntimeError 系异常）→ 4xx，不让它 500。内部代码 bug 属其它异常类型仍按 500 如实暴露。
+        raise HTTPException(
+            status_code=400,
+            detail=f"该 PDF 无法解析（损坏/无页面/无文本层/非有效 PDF）：{type(exc).__name__}: {exc}",
+        ) from exc
     finally:
         tmp.unlink(missing_ok=True)
     return parse_outcome(doc, report)

@@ -109,7 +109,7 @@ flowchart LR
 ## 运行方式（Phase 8）
 
 ```bash
-uv run pytest                # 全部测试（离线，不联网，128 passed）
+uv run pytest                # 全部测试（离线，不联网，144 passed）
 uv run pytest tests/test_eval.py   # Phase 8 eval 专项（19 项）
 
 # ---- 评测（Phase 8）----

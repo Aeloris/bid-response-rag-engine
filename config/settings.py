@@ -85,6 +85,17 @@ class ChunkingConfig(BaseModel):
     max_chars: int = 1200
     overlap_chars: int = 100
 
+    @model_validator(mode="after")
+    def _overlap_must_be_below_max(self) -> "ChunkingConfig":
+        # overlap>=max 会让 _split_long 的 "rest[max(0, cut-overlap):]" 切不出前进（cut==max 时
+        # rest 原样返回）→ 死循环挂死入库。启动即拒绝，别留到运行时。
+        if self.overlap_chars >= self.max_chars:
+            raise ValueError(
+                f"chunking.overlap_chars({self.overlap_chars}) 必须小于 "
+                f"chunking.max_chars({self.max_chars})，否则超长文本切块死循环"
+            )
+        return self
+
 
 class RetrievalConfig(BaseModel):
     dense_top_k: int = 20
