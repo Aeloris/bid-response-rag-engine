@@ -163,6 +163,76 @@ def test_xlsx_bytes_has_four_sheets() -> None:
     assert any("质保期" in str(cell) for row in rows[1:] for cell in row)
 
 
+# ------------------------------------------------------------ L1：FAILED 任务不许渲染成可投
+def _failed_result() -> JobResult:
+    """qa 没跑（qa=None → block_count=0 / escalation=False），但引擎确实失败了的产物。"""
+    return JobResult(
+        job_id="abc123", status=JobStatus.FAILED, step="qa", error="qa 模型调用超时，任务中断",
+        tender_title="XX 市智慧园区智能化采购项目",
+        score_points=[
+            PointBrief(id="SP-01", score=5, is_star=True, content="★ 质保期不少于 36 个月…",
+                       evidence_type=["质保承诺函"]),
+        ],
+        gen=None, calc=None, qa=None,
+    )
+
+
+def test_failed_job_status_passthrough() -> None:
+    r = build_report(result=_failed_result(), doc=None, answers=None, checks=None)
+    assert r.status == "failed"
+    assert r.step == "qa"
+    assert "超时" in r.error
+    # done 任务原样带 done（默认不透传成失败）
+    assert build_report(result=_sample_result(), doc=_sample_doc(),
+                        answers=_sample_answers(), checks=_sample_checks()).status == "done"
+
+
+def test_failed_job_renderers_never_say_ke_tou() -> None:
+    """回归：流水线 FAILED 但 qa 缺失 → 老代码 block_count=0/escalation=False 渲染成绿"可投"。
+    现在必须三种导出都红标失败、不许出现"可投"。"""
+    r = build_report(result=_failed_result(), doc=_sample_doc(), answers=_sample_answers(),
+                     checks=_sample_checks())
+    assert r.verdict.escalation_required is False  # 复现老 bug 的诱因
+    assert r.verdict.block_count == 0
+
+    md = render_markdown(r)
+    assert "可投（无 BLOCK）" not in md and "引擎任务失败" in md and "qa 模型调用超时" in md
+
+    html = render_html(r)
+    assert "可投（无 BLOCK）" not in html and "引擎任务失败" in html and "qa 模型调用超时" in html
+
+    from openpyxl import load_workbook
+    wb = load_workbook(BytesIO(render_xlsx_bytes(r)))
+    overview = list(wb["概览"].values)
+    joined = "\n".join(str(c) for row in overview for c in row)
+    assert "可投（无 BLOCK）" not in joined and "失败——不可投" in joined and "qa 模型调用超时" in joined
+
+
+def test_failed_job_index_page_shows_failed_badge(tmp_path: Path) -> None:
+    """目录页回归：FAILED 任务没有 result（escalation=False）时列表曾假绿"可投"，须显示失败。"""
+    store = JobStore(tmp_path / "jobs")
+    job_id = "rep-failed"
+    store.create(job_id, b"%PDF-1.4 demo")
+    store.update(job_id, status=JobStatus.FAILED, step="qa", error="qa 超时")
+    store.save_result(job_id, JobResult(job_id=job_id, status=JobStatus.FAILED, step="qa",
+                                        error="qa 超时", tender_title="失败示例标"))
+    from app.main import app
+
+    app.dependency_overrides[get_job_store] = lambda: store
+    try:
+        with TestClient(app) as client:
+            lst = client.get("/reports")
+            assert lst.status_code == 200
+            assert job_id in lst.text
+            assert "失败" in lst.text
+            assert "可投（无 BLOCK）" not in lst.text   # 唯一 FAILED 任务：不许出现绿色可投
+            pg = client.get(f"/reports/{job_id}")
+            assert pg.status_code == 200
+            assert "引擎任务失败" in pg.text and "可投（无 BLOCK）" not in pg.text
+    finally:
+        app.dependency_overrides.pop(get_job_store, None)
+
+
 # ------------------------------------------------------------ 落盘 → 端点 e2e（离线）
 def _populate(store: JobStore) -> str:
     job_id = "rep-0001"

@@ -48,6 +48,9 @@ def _list_jobs(store: JobStore) -> list[dict]:
             "job_id": d.name,
             "title": result.tender_title if result else "",
             "status": state.status.value,
+            # FAILED 任务可能没有 result（qa 缺失 → escalation=False）→ 目录页会假绿"可投"；
+            # 显式带 failed，渲染层按失败态红标，不许误导成可投。
+            "failed": state.status.value == "failed",
             "escalation": bool(result and result.escalation_required),
             "created_at": state.created_at,
             "mtime": state_p.stat().st_mtime,

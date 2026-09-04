@@ -52,6 +52,15 @@ def _cit(c) -> str:
 # ------------------------------------------------------------ 一屏结论行（md/html 共用）
 def _verdict_lines(report: BidReport) -> list[str]:
     v = report.verdict
+    if report.status == "failed":  # 引擎流水线失败：绝不渲染成"可投"
+        step_txt = f"，中断于 {report.step}" if report.step and report.step != "done" else ""
+        lines = [f"⚠️ 引擎任务失败{step_txt}：本报告为半成品，不可投出",
+                 f"失败原因：{report.error or '（未记录）'}"]
+        if v.block_count or v.warn_count or v.info_count:
+            lines.append(f"风险计数（半成品仅供参考）：BLOCK {v.block_count} · WARN {v.warn_count} · INFO {v.info_count}")
+        if v.needs_material:
+            lines.append(f"待补材料：{'；'.join(v.needs_material)}")
+        return lines
     advise = "需拦截：存在废标级(BLOCK)风险，投出前必须人工复核" if v.escalation_required else "可投（无 BLOCK）"
     lines = [
         f"投出建议：{advise}",
@@ -75,6 +84,9 @@ def render_markdown(report: BidReport) -> str:
         meta.append(f"- 采购人：{h.buyer}")
     if h.deadline:
         meta.append(f"- 投标截止：{h.deadline}")
+    if report.status != "done":
+        meta.append(f"- 引擎状态：{report.status}"
+                    + (f"（中断于 {report.step}）" if report.step and report.step != "done" else ""))
     out += meta + [""]
 
     if report.missing_artifacts:
@@ -182,14 +194,25 @@ def _html_cits(p: ReportPoint) -> str:
 
 def render_html(report: BidReport) -> str:
     h, v = report.header, report.verdict
-    banner_cls = "bad" if v.escalation_required else "ok"
-    banner_txt = ("⚠️ 存在废标级(BLOCK)风险 —— 投出前必须人工复核" if v.escalation_required
-                  else "✅ 无 BLOCK —— 建议状态：可投（仍请售前终审）")
+    failed = report.status == "failed"
+    if failed:
+        banner_cls = "bad"
+        banner_txt = "⛔ 引擎任务失败 —— 本报告为半成品，投出前必须先修复流水线"
+    elif v.escalation_required:
+        banner_cls = "bad"
+        banner_txt = "⚠️ 存在废标级(BLOCK)风险 —— 投出前必须人工复核"
+    else:
+        banner_cls = "ok"
+        banner_txt = "✅ 无 BLOCK —— 建议状态：可投（仍请售前终审）"
     miss = ""
     if report.missing_artifacts:
         miss = f'<div class="banner miss">⚠️ 产物缺失：{"、".join(_esc(x) for x in report.missing_artifacts)}（对应段落为空）</div>'
 
-    stats = f"""
+    if failed:  # 失败态不铺"已答/风险"统计卡（qa 缺失时 block_count=0 会假绿），改为失败横幅
+        step_txt = f'（中断于 <code>{_esc(report.step)}</code>）' if report.step not in ("", "done") else ""
+        stats = (f'<div class="banner bad" style="margin-top:0">失败原因：{_esc(report.error or "未记录")}{step_txt}</div>')
+    else:
+        stats = f"""
 <div class="grid">
  <div class="stat"><b>{_esc(v.answered_points)}/{_esc(v.total_points)}</b><span>评分点已答</span></div>
  <div class="stat"><b>{_esc(v.star_answered)}/{_esc(v.star_total)}</b><span>★ 关键点已答</span></div>
@@ -278,8 +301,9 @@ def render_job_list_html(jobs: list[dict]) -> str:
         rows.append('<p>还没有任务。先跑一条：<code>curl -F "file=@fixtures/tender_sample.pdf" http://127.0.0.1:8000/tasks</code></p>')
     for j in jobs:
         esc = _esc
-        badge_cls = "bad" if j.get("escalation") else "ok"
-        badge_txt = "拦截" if j.get("escalation") else "可投"
+        failed = bool(j.get("failed"))
+        badge_cls = "bad" if (failed or j.get("escalation")) else "ok"
+        badge_txt = "失败" if failed else ("拦截" if j.get("escalation") else "可投")
         title = j.get("title") or j.get("job_id")
         rows.append(
             f'<tr><td><code>{esc(j.get("job_id"))}</code></td>'
@@ -333,12 +357,17 @@ def render_xlsx_bytes(report: BidReport) -> bytes:
     meta = [
         ("任务编号", h.job_id), ("标书标题", h.tender_title), ("采购人", h.buyer or ""),
         ("投标截止", h.deadline or ""), ("源文件", h.source_file), ("报告生成", h.generated_at),
-        ("投出建议", "需拦截（有 BLOCK）" if v.escalation_required else "可投（无 BLOCK）"),
+        ("引擎状态", report.status),
+        ("投出建议", "失败——不可投（流水线中断）" if report.status == "failed"
+                  else ("需拦截（有 BLOCK）" if v.escalation_required else "可投（无 BLOCK）")),
         ("评分点应答", f"{v.answered_points}/{v.total_points}"), ("★ 关键点", f"{v.star_answered}/{v.star_total}"),
         ("BLOCK / WARN / INFO", f"{v.block_count} / {v.warn_count} / {v.info_count}"),
         ("数值核对", f"{v.calc_total} 条：达标{v.calc_conform} 正偏离{v.calc_over} 负偏离{v.calc_under} 待人工{v.calc_unknown}"),
         ("待补材料", "；".join(v.needs_material)),
     ]
+    if report.status == "failed":
+        meta.append(("失败原因", report.error or ""))
+        meta.append(("中断步骤", report.step or ""))
     for k, val in meta:
         ws.append([k, val])
     ws.column_dimensions["A"].font = Font(bold=True)

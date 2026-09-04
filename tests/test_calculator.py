@@ -137,3 +137,22 @@ def test_from_text_ignores_noise_labels() -> None:
     claims = from_text(text, "t")
     topics = {c.topic for c in claims}
     assert topics == {"分辨率"}  # "支持…分析" 与 "金额(万元)" 都不是可自证达标的能力
+
+
+def test_from_text_bare_pixel_bullet_captured_as_resolution() -> None:
+    """M2 回归：无标签裸 bullet"800 万像素（3840×2160）"句/行头都对不上主题，
+    但单位"像素"能唯一确定主题 → 抽进 分辨率 能力池（否则 ≥800W 标会误判拒投）。"""
+    claims = from_text("- 800 万像素（3840×2160）", "guide")
+    assert [(c.topic, c.numeric.value, c.numeric.unit) for c in claims] == [("分辨率", 8_000_000, "像素")]
+    assert claims[0].label == "800万像素"
+
+
+def test_bare_800w_bullet_rescues_under_judgement() -> None:
+    """M2 回归：标书 ≥800W，语料除 400W 显式型号外还有裸"800 万像素"行。
+    若裸行不被抽进能力池 → 只匹配到 400W → ★UNDER 误判拒投可投的标；
+    抽到后取 800W 达标、不进 star_under。"""
+    reqs = [_req("ST-1", "分辨率", "★ 分辨率≥800万像素", star=True)]
+    offers = from_text("- 型号A：400 万像素\n- 800 万像素（3840×2160）", "guide")
+    checks, summ = _calc().check(reqs, offers)
+    assert checks[0].verdict == Verdict.CONFORM and summ.star_under == []
+    assert "800" in checks[0].offer.claim

@@ -149,6 +149,10 @@ def build_report(
         verdict.star_total = gen.star_total
         verdict.star_answered = gen.star_answered
 
+    # 引擎状态透传：任务 failed（qa 为空 → block_count=0）时若不管会让报告假绿成"可投"，
+    # 必须在渲染层拦成失败态。done/pending 原样带；枚举 → value。
+    _status = getattr(result, "status", None)
+    status = _status.value if hasattr(_status, "value") else (_status or "done")
     return BidReport(
         header=ReportHeader(
             job_id=result.job_id,
@@ -167,6 +171,9 @@ def build_report(
         ) for q in issues_sorted],
         unparsed=list(getattr(doc, "unparsed_segments", None) or []) if doc is not None else [],
         missing_artifacts=list(missing_artifacts),
+        status=str(status),
+        step=getattr(result, "step", None) or "done",
+        error=getattr(result, "error", None) or "",
     )
 
 

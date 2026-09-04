@@ -63,6 +63,11 @@ KNOWN_TOPICS = {
     "AI分析能力",
 }
 
+# 无标签裸规格 bullet 的单位兜底（"- 800 万像素（3840×2160）" 这种数值即标签的写法）。
+# 只收"单位能唯一确定主题"的：像素→分辨率 无歧义；GB/MB 同时映射 内存/存储 两个主题，
+# "内存 128GB" 与 "存储 120TB" 靠前词标签区分，裸 GB 收不了 → 不收（宁漏不硬凑）。
+_SPEC_UNIT_TOPIC = {"像素": "分辨率"}
+
 # 标签前后的噪音词（剥掉后对齐同义词）
 _NOISE_PREFIX = ("整体", "整机", "有效", "本项目", "我方", "投标人", "平台")
 _NOISE_SUFFIX = ("须", "应", "要", "求", "且", "并", "须确保", "达", "至", "支持", "采用", "可")
@@ -199,6 +204,10 @@ def from_text(text: str, source: str) -> list[OfferClaim]:
             if topic not in KNOWN_TOPICS and canonical_topic(header) in KNOWN_TOPICS:
                 topic = canonical_topic(header)
                 label = header
+            if topic not in KNOWN_TOPICS and n.unit in _SPEC_UNIT_TOPIC:
+                # 句/头标签都对不上，但规格单位能唯一定主题（如 "800 万像素" 裸 bullet）
+                topic = _SPEC_UNIT_TOPIC[n.unit]
+                label = n.raw
             if topic not in KNOWN_TOPICS:
                 continue  # 噪音标签（支持/提供/含…）不入能力表
             key = (topic, round(n.value, 6), n.unit)

@@ -108,3 +108,6 @@ class BidReport(BaseModel):
     issues: list[ReportIssue] = Field(default_factory=list)
     unparsed: list[str] = Field(default_factory=list)
     missing_artifacts: list[str] = Field(default_factory=list, description="缺哪些步骤产物（报告顶部黄条提示）")
+    status: str = Field("done", description="引擎任务状态透传（done/failed/pending…）：failed 不许渲染成可投")
+    step: str = Field("done", description="中断步骤（失败时定位到哪一段，如 generate/qa）")
+    error: str = Field("", description="失败原因（result.error 透传，报告如实展示）")

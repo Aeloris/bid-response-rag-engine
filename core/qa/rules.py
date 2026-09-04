@@ -33,7 +33,11 @@ _LOWER_BETTER = {"工期", "到场时间", "最低照度", "误报率"}
 
 # 弱承诺语气词：紧邻数值前出现则视为"可选/约数"而非硬承诺，跳过冲突与超承诺判定
 # （"整机质保3年并可延保至5年"的 5 年是可选项；"质保期5年"直白承诺才抓）
-_HEDGE = ("可延保", "可延", "可选", "可扩展至", "约", "左右", "近", "支持扩展", "可")
+# 注意**不放裸"可"**：可承诺/可提供/可满足/可实现 是投标最常见的硬承诺措辞，
+# 放了会把"我方可承诺交付工期 70 日历天"这类真承诺当成弱承诺吞掉 → OVER_COMMIT 漏检。
+_HEDGE = ("可延保", "可延", "可选", "可扩展至", "支持扩展",
+          "加购", "另购", "另行购买", "选购",
+          "约", "左右", "近")
 
 
 # ============================================================ 覆盖率
@@ -165,13 +169,21 @@ def reconcile_deviation(checks: list[ParamCheck], pending_human: list[str] | Non
 
 
 def _topic_near(text: str, pos: int) -> str:
-    """取数值前最近的同义词主题（比"整机质保…可延保至 5 年"仍能对齐到 质保期）。"""
+    """取数值前最近的同义词主题（比"整机质保…可延保至 5 年"仍能对齐到 质保期）。
+
+    选"终点最靠近数值"的别名命中；同终点（嵌套别名如 内存容量/容量 都止于同一处）取
+    **更长更精确**者 —— 否则"我方服务器内存容量 256GB"会被短别名"容量"归到 存储容量，
+    与 extract 侧 canonical_topic("内存容量")→内存 分叉，内存超卖就漏判。
+    """
     pre = text[:pos]
-    best_key, best_canon, best_pos = "", "", -1
-    for key, canon in sorted(_ALIAS.items(), key=lambda kv: len(kv[0]), reverse=True):
+    best_key, best_canon, best_end = "", "", -1
+    for key, canon in _ALIAS.items():
         i = pre.rfind(key)
-        if i > best_pos:
-            best_key, best_canon, best_pos = key, canon, i
+        if i < 0:
+            continue
+        end = i + len(key)
+        if end > best_end or (end == best_end and len(key) > len(best_key)):
+            best_key, best_canon, best_end = key, canon, end
     if best_key:
         return best_canon
     # 没有可命中的同义词：退回"数值前最后一个词段"清洗
@@ -265,10 +277,33 @@ def _offer_is_hedged(o: OfferClaim) -> bool:
     return any(h in window for h in _OFFER_HEDGE_PRE)
 
 
+# 时间量纲跨基准换算（qa 侧自洽/超承诺比对用）：parse_numeric 已把 日→天、年→月 归并，
+# 但 分钟/小时 仍是不同基准单位 —— "重大故障 30 分钟内到场" vs 语料"2 小时内到场"
+# 不同单位就对不齐，LOWER_BETTER 的"更短更严承诺"会漏判超承诺。这里把 分/时 统一折到
+# "分钟"再比（单调线性，不影响方向判定）。**不折 天**：工期/存储周期以天为自然单位，
+# 折成分钟会让 bound 变成 "≤141120分钟" 这类无意义大数；天口径内部自比即可（漏的只是
+# "N 天内到场" vs "M 小时"这类罕见跨档，宁漏不误导）。
+_TIME_UNIT_TO_MIN = {"分钟": 1.0, "小时": 60.0}
+
+
+def _to_minutes(value: float, unit: str) -> tuple[float, str]:
+    """时间类单位折到分钟（否则原样返回）；返回 (换算值, 规范单位)。"""
+    f = _TIME_UNIT_TO_MIN.get(unit)
+    if f is None:
+        return value, unit
+    return value * f, "分钟"
+
+
+def _num(x: float) -> str:
+    """数值展示：整数值不带小数点（36.0 → '36'），非整用最简短表达。"""
+    return str(int(x)) if float(x).is_integer() else f"{x:g}"
+
+
 def numeric_conflicts(answers: list, offers: list[OfferClaim] | None = None) -> list[QaIssue]:
     """读应答正文，找两类确定性风险：
     - NUM_CONFLICT：同一应答内、同主题同量纲的硬承诺互相矛盾（98 天 vs 120 天）；
     - OVER_COMMIT：硬承诺超出我方语料可支撑的最强能力（质保 5 年而 catalog 仅 3 年）。
+    时间类单位先统一折到"分钟"（见 _TIME_UNIT_TO_MIN），跨 分/时/天 措辞才能对齐比较。
     """
     offers_by: dict[tuple[str, str], list[float]] = {}
     for o in offers or []:
@@ -276,7 +311,8 @@ def numeric_conflicts(answers: list, offers: list[OfferClaim] | None = None) -> 
             continue
         if _offer_is_hedged(o):
             continue  # 可延保至 5 年 / 可选 60 月：是可选项不是硬能力，进池会把上限抬虚、放走超承诺
-        offers_by.setdefault((o.topic, o.numeric.unit), []).append(o.numeric.value)
+        val, unit = _to_minutes(o.numeric.value, o.numeric.unit)
+        offers_by.setdefault((o.topic, unit), []).append(val)
 
     issues: list[QaIssue] = []
     for a in answers:
@@ -286,7 +322,8 @@ def numeric_conflicts(answers: list, offers: list[OfferClaim] | None = None) -> 
         for topic, value, unit, op, raw, hedge in _iter_claims(a.answer):
             if hedge or not topic:
                 continue
-            claims.append({"topic": topic, "value": value, "unit": unit, "op": op, "raw": raw})
+            val, cunit = _to_minutes(value, unit)
+            claims.append({"topic": topic, "value": val, "unit": cunit, "op": op, "raw": raw})
         # 同应答内去重（同一数量被引用两次不算矛盾）
         seen_claim: set[tuple] = set()
         uniq: list[dict] = []
@@ -330,11 +367,11 @@ def numeric_conflicts(answers: list, offers: list[OfferClaim] | None = None) -> 
             if c["topic"] in _LOWER_BETTER:
                 best = min(pool)  # 越小越优：我方能保证的最短
                 over = c["value"] < best - 1e-9
-                bound_txt = f"≤{best}（我方能力下限）"
+                bound_txt = f"≤{_num(best)}{c['unit']}（我方能力下限）"
             else:
                 best = max(pool)
                 over = c["value"] > best + 1e-9
-                bound_txt = f"≥{best}（我方能力上限）"
+                bound_txt = f"≥{_num(best)}{c['unit']}（我方能力上限）"
             if over:
                 issues.append(
                     QaIssue(

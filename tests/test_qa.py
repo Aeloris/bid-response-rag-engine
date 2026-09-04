@@ -185,6 +185,34 @@ class TestNumericConflicts:
                _ans("SP-06", "")]
         assert rules.numeric_conflicts(ans, []) == []
 
+    def test_bare_ke_commit_not_hedged(self):
+        """回归 H1：裸"可"绝不能当弱承诺词。"我方可承诺交付工期 70 日历天"是真硬承诺，
+        若被 hedge 吞掉会跳过 → OVER_COMMIT（承诺 70 < 我方能力下限 90）漏检。"""
+        ans = [_ans("SP-05", "我方可承诺交付工期 70 日历天")]
+        offers = [_off("工期", 90, "天", "标准交付工期 90 天")]
+        issues = rules.numeric_conflicts(ans, offers)
+        assert issues and issues[0].kind == IssueKind.OVER_COMMIT
+        assert "≤90天" in issues[0].reason          # bound 带规范单位（M1 口径）
+
+    def test_memory_capacity_not_lumped_to_storage(self):
+        """回归 H2：短别名"容量"曾把"内存容量"归到 存储容量，与 内存 能力池对不齐 → 超卖漏检。
+        语料同时有 存储容量 120TB 时更会放走 512GB 内存超卖。"""
+        ans = [_ans("SP-06", "我方服务器内存容量 512GB")]
+        offers = [_off("内存", 262144, "MB", "单机内存 256GB"),    # parse 统一到 MB：256GB
+                  _off("存储容量", 125829120, "MB", "存储 120TB")]  # 120TB
+        issues = rules.numeric_conflicts(ans, offers)
+        assert issues and issues[0].kind == IssueKind.OVER_COMMIT
+        assert issues[0].evidence == "512GB"
+
+    def test_cross_unit_minutes_hours_over_commit(self):
+        """回归 M1：应答"30 分钟内" vs 语料"2 小时内"曾因 分/时 量纲不同对不齐 → 超承诺漏检。
+        现在统一折到分钟：30 < 120（到场时间越小越优）→ 拦。"""
+        ans = [_ans("SP-05", "重大故障 30 分钟内到场")]
+        offers = [_off("到场时间", 2, "小时", "2小时内到场")]
+        issues = rules.numeric_conflicts(ans, offers)
+        assert issues and issues[0].kind == IssueKind.OVER_COMMIT
+        assert "≤120分钟" in issues[0].reason         # bound 文案带规范单位，不是裸 120
+
 
 # ================================================================ 4. judge + service
 
